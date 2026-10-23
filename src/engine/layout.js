@@ -3,21 +3,14 @@
 // (6 px per ASCII glyph, 9 px per wide glyph, 10 px line) unless a measure function is given.
 
 import { parseSize, resolveTerms, usesChildren, usesSiblings } from './size.js';
+import { layoutText } from './font.js';
 
 const FONT_SCALE = { small: 0.8, normal: 1, large: 1.5, extra_large: 2 };
 
+// Approximate font used until the real metrics (font.js) are loaded: 6 px per ASCII glyph,
+// 9 px per wide glyph, 4 px space, 10 px line.
 export function defaultMeasure(text, scale = 1, maxWidth = Infinity) {
-  const lines = [];
-  for (const raw of String(text ?? '').replace(/§./g, '').split('\n')) {
-    let line = '', w = 0;
-    for (const ch of raw) {
-      const cw = ch.codePointAt(0) > 0x2e80 ? 9 : ch === ' ' ? 4 : 6;
-      if (w + cw * scale > maxWidth && line) { lines.push(w); line = ''; w = 0; }
-      line += ch; w += cw * scale;
-    }
-    lines.push(w);
-  }
-  return { w: Math.max(0, ...lines), h: lines.length * 10 * scale, lines: lines.length };
+  return layoutText(String(text ?? ''), scale, maxWidth, (ch) => (ch === ' ' ? 4 : ch.codePointAt(0) > 0x2e80 ? 9 : 6));
 }
 
 const ANCHORS = ['top_left', 'top_middle', 'top_right', 'left_middle', 'center', 'right_middle', 'bottom_left', 'bottom_middle', 'bottom_right'];
@@ -214,9 +207,10 @@ export function layoutTree(root, screen, opts = {}) {
         placed.push({ c, x, y });
         if (c.eff?.visible !== false) {
           max[0] = Math.max(max[0], sz[0]); max[1] = Math.max(max[1], sz[1]);
-          // the children's reach measured from the panel's start, independent of where
-          // the anchor would put them in a panel whose size is not known yet
-          extent[0] = Math.max(extent[0], sz[0] + Math.max(0, ox)); extent[1] = Math.max(extent[1], sz[1] + Math.max(0, oy));
+          // the children's own size, independent of where the anchor would put them in a panel
+          // whose size is not known yet, and of their offset (measured in game 2026-10-23: a
+          // [152, "100%c + 8px"] panel round a 128 px child at offset [4, 4] was 136 tall, not 140)
+          extent[0] = Math.max(extent[0], sz[0]); extent[1] = Math.max(extent[1], sz[1]);
         }
       }
       // %c on a plain panel is the children's reach, not their sum
@@ -228,6 +222,13 @@ export function layoutTree(root, screen, opts = {}) {
 
   function position(node, x, y, layer, clip) {
     const [w, h] = node.size || [0, 0];
+    if (node.props.type === 'label') {
+      // the lines the label draws, broken at its final width with the same measure as its size
+      const p = node.props;
+      const scale = (FONT_SCALE[p.font_size] ?? 1) * (typeof p.font_scale_factor === 'number' && p.font_scale_factor > 0 ? p.font_scale_factor : 1);
+      node.fontScale = scale;
+      node.textLines = measure(node.eff?.text ?? '', scale, w + 0.01).lineTexts;
+    }
     const rect = { x, y, w, h };
     const lay = layer + (typeof node.props.layer === 'number' ? node.props.layer : 0); // relative to the parent (LAY-18)
     place(node, rect, lay, clip);
@@ -243,10 +244,47 @@ export function layoutTree(root, screen, opts = {}) {
   }
 
   measureNode(root, screen.w, screen.h, [0, 0]);
+  // A scroll view hides its bar panel when the content fits the viewport (CN-51); the layout then
+  // runs again so a "fill" viewport takes the bar's place.
+  if (hideFittingScrollbars(root)) { cache.clear(); measureNode(root, screen.w, screen.h, [0, 0]); }
   const [rw, rh] = root.size;
   const [fx, fy] = anchorFactor(root.props.anchor_from), [tx, ty] = anchorFactor(root.props.anchor_to);
   position(root, fx * screen.w - tx * rw, fy * screen.h - ty * rh, 0, null);
   return out;
+}
+
+function findByName(node, name) {
+  const q = [...node.children];
+  while (q.length) {
+    const n = q.shift();
+    if (n.ignored) continue;
+    if (n.name === name) return n;
+    q.push(...n.children);
+  }
+  return null;
+}
+
+function hideFittingScrollbars(root) {
+  let changed = false;
+  const visit = (n) => {
+    if (n.ignored) return;
+    const p = n.props;
+    if (p.type === 'scroll_view' && !p.scrollbar_always_visible) {
+      const content = findByName(n, p.scroll_content), port = findByName(n, p.scroll_view_port), bar = findByName(n, p.scroll_box_and_track_panel);
+      if (content?.size && port?.size && bar && bar.eff) {
+        const fits = content.size[1] <= port.size[1] + 0.01;
+        if (fits && bar.eff.visible !== false) { bar.eff.visible = false; bar.scrollHidden = true; changed = true; }
+        else if (!fits && bar.scrollHidden) { bar.eff.visible = true; bar.scrollHidden = false; changed = true; }
+      }
+    }
+    for (const c of n.children) visit(c);
+  };
+  visit(root);
+  if (changed) {
+    const vis = (n, parent) => { n.effVisible = parent && n.eff?.visible !== false; for (const c of n.children) if (!c.ignored) vis(c, n.effVisible); };
+    vis(root, true);
+  }
+  return changed;
 }
 
 function intersect(a, b) {

@@ -21,6 +21,19 @@ test('%c of a plain panel is its children reach, whatever their anchor', () => {
   assert.equal(tree.children[0].rect.y, tree.rect.y);
 });
 
+test('%c of a plain panel leaves out the children offset (measured in game)', () => {
+  // dfui's split form: [152, "100%c + 8px"] round a 128 px stack at offset [4, 4] is 136 tall in game
+  const cat = buildCatalog([pack({ 'ui/n.json': JSON.stringify({
+    namespace: 'n',
+    r: { type: 'panel', size: [152, '100%c + 8px'], controls: [{ a: { type: 'panel', size: ['100% - 8px', 128], offset: [4, 4], anchor_from: 'top_left', anchor_to: 'top_left' } }] },
+  }) })]);
+  const { tree } = buildTree(cat, 'n.r');
+  new Session(cat, tree).run(host(0));
+  layoutTree(tree, { w: 200, h: 200 });
+  assert.equal(tree.rect.h, 136);
+  assert.equal(tree.children[0].rect.y - tree.rect.y, 4);
+});
+
 test('a hidden layout whose length binding waits for "visible" makes nothing (BND-32), and fills once shown', () => {
   const layout = (visible) => ({ type: 'stack_panel', visible, size: [100, '100%c'], collection_name: 'items',
     factory: { name: 'f', control_name: 'n.row' },

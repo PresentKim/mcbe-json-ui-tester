@@ -129,12 +129,20 @@ function drawImage(el, n, textures, zoom) {
   }
   el.title = tex;
   const ns = info.nineslice;
-  if (ns && ns.nineslice_size !== undefined) {
+  if (ns && ns.nineslice_size !== undefined && info.w) {
+    // nineslice_size is in base_size units (the sidecar's texture size), not image pixels (LAY-27)
     const s = Array.isArray(ns.nineslice_size) ? ns.nineslice_size : [ns.nineslice_size, ns.nineslice_size, ns.nineslice_size, ns.nineslice_size];
+    const base = Array.isArray(ns.base_size) ? ns.base_size : ns.base_size ? [ns.base_size, ns.base_size] : [info.w, info.h];
+    const kx = info.w / base[0], ky = info.h / base[1];
+    // nineslice_size order is [left, top, right, bottom]; CSS wants top right bottom left
+    const sl = [s[1] * ky, s[2] * kx, s[3] * ky, s[0] * kx];
+    const width = [s[1], s[2], s[3], s[0]].map((v) => `${v * zoom}px`).join(' ');
     el.style.borderStyle = 'solid';
-    el.style.borderWidth = s.map((v) => `${v * zoom}px`).join(' ');
-    el.style.borderImage = `url("${info.url}") ${s.join(' ')} fill / ${s.map((v) => `${v * zoom}px`).join(' ')} stretch`;
+    el.style.borderWidth = width;
+    el.style.borderImage = `url("${info.url}") ${sl.join(' ')} fill / ${width} stretch`;
     el.style.boxSizing = 'border-box';
+  } else if (ns && ns.nineslice_size !== undefined) {
+    return; // drawn once the image size is known
   } else {
     el.style.backgroundImage = `url("${info.url}")`;
     const tiled = n.props.tiled;
@@ -182,12 +190,15 @@ function drawItem(el, n, items, textures, zoom) {
   const id = Math.floor(aux / 65536);
   const entry = items(id);
   el.title = entry ? `${entry.n} (#item_id_aux ${aux})` : `#item_id_aux ${aux}`;
-  if (!entry || (!entry.t && !entry.b)) {
+  if (!entry || (!entry.t && !entry.b && !entry.p)) {
     el.classList.add('renderer');
     el.textContent = entry ? entry.n : String(id);
     return true;
   }
-  const s = Math.min(n.rect.w, n.rect.h) * zoom;
+  // Icons are 16 texels drawn at a whole number of screen pixels per texel: a 22 px renderer at
+  // GUI scale 4 is 88 screen px, 5 px per texel, so the icon is 80 px (20 GUI px), centred.
+  const avail = Math.min(n.rect.w, n.rect.h) * zoom;
+  const s = 16 * Math.max(1, Math.floor(avail / 16 + 1e-6));
   const box = document.createElement('div');
   box.className = 'item-icon';
   Object.assign(box.style, { width: `${s}px`, height: `${s}px`, left: `${(n.rect.w * zoom - s) / 2}px`, top: `${(n.rect.h * zoom - s) / 2}px` });
@@ -196,19 +207,34 @@ function drawItem(el, n, items, textures, zoom) {
     const u = url(entry.t);
     if (u) box.style.backgroundImage = `url("${u}")`;
   } else {
-    // isometric cube: top, left (front) and right faces, each a 16×16 texture skewed into place
-    const k = s / 32;
-    const faces = [
-      [entry.b[0], `matrix(${k},${-k / 2},${k},${k / 2},0,${s / 4})`, 1],
-      [entry.b[1], `matrix(${k},${k / 2},0,${k},0,${s / 4})`, 0.8],
-      [entry.b[2], `matrix(${k},${-k / 2},0,${k},${s / 2},${s / 2})`, 0.6],
-    ];
-    for (const [tex, m, light] of faces) {
+    // The block cell seen by an orthographic camera turned 45° and tilted 30°, its centre on the
+    // icon's centre (measured in game 2026-10-23: edges climb 1 px per 2 px across; a full cube is
+    // 7/8 of the icon wide and 0.97 of it tall; a slab sits where the cube's lower half would).
+    // Model space is in texels, 0..16: a runs along the left face (west side), b along the right
+    // face (front) away from the viewer, y up.
+    const c45 = Math.SQRT1_2, s30 = 0.5, c30 = Math.sqrt(3) / 2;
+    // A pane is drawn 1.22 times bigger than the cell (measured: glass_pane 38×61 px where its
+    // plate at this camera would be 31×50). Why is not known; it equals the ratio of the cube's
+    // bounding sphere to the plate's, but a slab is not scaled up that way.
+    const k = ((7 / 8) * s) / (32 * c45) * (entry.p ? 1.22 : 1); // px per texel
+    const ea = [k * c45, k * c45 * s30], eb = [k * c45, -k * c45 * s30], ey = [0, -k * c30];
+    const at = (a, y, b) => [0, 1].map((i) => s / 2 + (a - 8) * ea[i] + (y - 8) * ey[i] + (b - 8) * eb[i]);
+    const down = [-ey[0], -ey[1]];
+    const h = entry.h ?? 16;
+    // [texture, u axis, v axis, model point of texel (0, 0), light, texel crop [u0, u1, v0, v1]]
+    const faces = entry.p
+      // a pane is the plate between b = 7 and 9: its left face, then its top and right edges,
+      // whose columns 7..9 of the edge texture are the plate's thickness
+      ? [[entry.p[0], ea, down, at(0, 16, 7), 0.8], [entry.p[1], eb, ea, at(0, 16, 0), 1, [7, 9, 0, 16]], [entry.p[1], eb, down, at(16, 16, 0), 0.6, [7, 9, 0, 16]]]
+      // a slab's sides show the lower rows of the side texture, as in the world
+      : [[entry.b[0], eb, ea, at(0, h, 0), 1], [entry.b[1], ea, down, at(0, 16, 0), 0.8, [0, 16, 16 - h, 16]], [entry.b[2], eb, down, at(16, 16, 0), 0.6, [0, 16, 16 - h, 16]]];
+    for (const [tex, ua, va, o, light, [u0, u1, v0, v1] = [0, 16, 0, 16]] of faces) {
       const f = document.createElement('div');
       f.className = 'cube-face';
       const u = url(tex);
       if (u) f.style.backgroundImage = `url("${u}")`;
-      f.style.transform = m;
+      Object.assign(f.style, { width: `${u1 - u0}px`, height: `${v1 - v0}px`, backgroundPosition: `${-u0}px ${-v0}px` });
+      f.style.transform = `matrix(${ua[0]},${ua[1]},${va[0]},${va[1]},${o[0] + u0 * ua[0] + v0 * va[0]},${o[1] + u0 * ua[1] + v0 * va[1]})`;
       f.style.filter = light < 1 ? `brightness(${light})` : '';
       box.append(f);
     }
@@ -217,15 +243,44 @@ function drawItem(el, n, items, textures, zoom) {
   return true;
 }
 
+// Draws the lines the layout broke, each glyph in the advance the font metrics gave it, so line
+// breaks and text extents are the layout's (the glyph shapes come from the browser's font).
 function drawLabel(el, n, zoom) {
   el.classList.add('label');
-  const scale = ({ small: 0.8, normal: 1, large: 1.5, extra_large: 2 }[n.props.font_size] ?? 1) * (n.props.font_scale_factor > 0 ? n.props.font_scale_factor : 1);
+  const scale = n.fontScale ?? 1;
   el.style.fontSize = `${8 * scale * zoom}px`;
   el.style.lineHeight = `${10 * scale * zoom}px`;
   const base = css(n.eff?.color ?? n.props.color) || '#ffffff';
   el.style.color = base;
   if (n.props.shadow) el.style.textShadow = `${zoom}px ${zoom}px 0 rgba(0,0,0,.6)`;
-  el.style.textAlign = n.props.text_alignment || 'left';
-  el.append(formatText(n.eff?.text ?? '', base));
-  if (n.props.localize !== false && /^[a-z0-9_.-]+$/i.test(n.eff?.text || '') && (n.eff?.text || '').includes('.')) el.classList.add('lang-key');
+  const align = n.props.text_alignment || 'left';
+  const lines = n.textLines || [{ text: n.eff?.text ?? '', w: 0, glyphs: null }];
+  let color = base, bold = false;
+  for (const line of lines) {
+    const row = document.createElement('div');
+    row.className = 'line';
+    row.style.height = `${10 * scale * zoom}px`;
+    const offset = align === 'center' ? (n.rect.w - line.w) / 2 : align === 'right' ? n.rect.w - line.w : 0;
+    row.style.paddingLeft = `${Math.max(0, offset) * zoom}px`;
+    if (!line.glyphs) { row.append(formatText(line.text, base)); el.append(row); continue; }
+    for (const g of line.glyphs) {
+      if (g.code) {
+        const c = g.ch[1].toLowerCase();
+        if (COLOR_CODES[c]) { color = COLOR_CODES[c]; bold = false; }
+        else if (c === 'l') bold = true;
+        else if (c === 'r') { color = base; bold = false; }
+        continue;
+      }
+      const span = document.createElement('span');
+      span.className = 'glyph';
+      span.textContent = g.ch;
+      span.style.width = `${g.w * zoom}px`;
+      if (color !== base) span.style.color = color;
+      if (bold) span.style.fontWeight = '700';
+      row.append(span);
+    }
+    el.append(row);
+  }
+  const text = n.eff?.text || '';
+  if (n.props.localize !== false && /^[a-z0-9_.-]+$/i.test(text) && text.includes('.')) el.classList.add('lang-key');
 }

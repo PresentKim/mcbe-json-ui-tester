@@ -61,7 +61,9 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
 .ctl { position: absolute; pointer-events: none; }
 .ctl.image { background-repeat: no-repeat; }
 .ctl.image.missing { background: repeating-linear-gradient(45deg, #ff00ff55 0 4px, #00000055 4px 8px); }
-.ctl.label { white-space: pre; overflow: visible; font-family: "Minecraft", ui-monospace, Consolas, monospace; color: #fff; }
+.ctl.label { white-space: pre; overflow: visible; font-family: "Minecraft", "Malgun Gothic", ui-monospace, Consolas, monospace; color: #fff; }
+.ctl.label .line { white-space: nowrap; overflow: visible; }
+.ctl.label .glyph { display: inline-block; overflow: visible; text-align: left; }
 .ctl.label.lang-key { text-decoration: underline dotted #ffffff88; }
 .item-icon { position: absolute; background-size: contain; background-repeat: no-repeat; background-position: top center; image-rendering: pixelated; }
 .cube-face { position: absolute; left: 0; top: 0; width: 16px; height: 16px; transform-origin: 0 0; background-size: 16px auto; background-repeat: no-repeat; image-rendering: pixelated; }
@@ -94,6 +96,12 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
 .exprout .hint { display: block; font-family: system-ui, sans-serif; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chips button { font: 11px ui-monospace, Consolas, monospace; padding: 2px 6px; }
+
+body.stage-only .top, body.stage-only .pane, body.stage-only .stagebar, body.stage-only .toast { display: none !important; }
+body.stage-only .layout { display: block; height: auto; }
+body.stage-only .stagewrap { padding: 0; display: block; overflow: visible; }
+body.stage-only .stage { margin: 0; background: #000; box-shadow: none; }
+body.stage-only { background: #000; overflow: hidden; }
 
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 1fr; height: auto; }

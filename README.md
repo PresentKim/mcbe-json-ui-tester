@@ -59,6 +59,15 @@ node serve.mjs            # http://localhost:5178
 node serve.mjs 5180 --pack ../packs/theme --pack ../packs/server
 ```
 
+저장해 둔 시험을 주소로 바로 띄울 수 있다. `?scenario=<JSON 주소>`는 `{ root, host, screen: {w, h}, zoom, mode, platform }`을 불러오고, `&view=stage`를 붙이면 화면만 왼쪽 위에 그려 게임 스크린숏과 픽셀로 맞대기 좋다. `--static <폴더>`는 그 폴더를 `/static/`으로 내어 준다.
+
+```bash
+node serve.mjs 5181 --static ./scenarios
+# http://localhost:5181/?scenario=/static/research.json&view=stage
+```
+
+게임 창이 1920×1009이고 GUI 배율이 4면 화면은 480×252.25다. 소수 높이까지 그대로 넣어야 세로 가운데 정렬이 게임과 같아진다.
+
 `serve.mjs`는 옆 폴더의 `bedrock-samples/resource_pack`(`../bedrock-samples` 또는 `../../bedrock-samples`)을 찾아 바닐라를 바로 불러온다. 다른 위치면 `VANILLA=<resource_pack 경로>`를 준다. 찾지 못하면 웹과 같이 GitHub에서 받는다(`node serve.mjs 5179 --no-vanilla`로 이 상태를 일부러 볼 수 있다). 외부 패키지는 필요 없다(Node 20+).
 
 ### 2.3 명령줄
@@ -75,7 +84,7 @@ node cli.mjs --vanilla ../bedrock-samples/resource_pack --pack ./my_rp --root se
 npm test
 ```
 
-84건(식 50, 크기·JSON 21, 정의 해석 10, 래치 1, 실제 팩 회귀 2). `node:test`로 돈다.
+87건(식 50, 크기·JSON·글꼴 22, 정의 해석 10, 래치 1, 실제 팩 회귀 3, 아이템 아이콘 1). `node:test`로 돈다.
 
 ## 3. 규칙 ID와 근거
 
@@ -93,8 +102,8 @@ npm test
 
 - **게임이 아니다.** 두 엔진 모델 모두 틀릴 수 있다. 근거끼리 갈리는 곳(예: 식 안의 `$변수` 치환)은 진단에 "게임 확인 필요"로 적는다.
 - **엔진 데이터는 흉내다.** 화면 컨트롤러가 주는 바인딩은 `src/engine/host.js`의 일부만 있다. 모르는 전역값은 없음(또는 `#visible` false)으로 본다. 종이 인형, 스크롤 동작, 애니메이션, 입력 포커스, 소리는 그리지 않는다(아이템이 아닌 엔진 렌더러는 "윤곽"을 켜면 자리표시로 보인다).
-- **아이템 아이콘**: `data/item-atlas.json`(바닐라 1.26.50.4, 1,623개 중 1,538개에 텍스처)으로 숫자 ID를 아이콘에 잇는다. 텍스처가 없는 85개(새 스폰 알, 음반, 하네스 등)는 이름만 보인다. 숫자 ID는 버전과 커스텀 아이템 수에 따라 밀리므로(ANI-06) 다른 버전·서버에서는 다른 아이템이 보일 수 있다. 커스텀 아이템은 그리지 않는다. 마법 부여 반짝임, 내구도 막대, 블록 모델(계단·반 블록 모양)은 없다.
-- **글자 폭은 근사다.** 기본 글꼴을 ASCII 6px, 넓은 글자 9px, 줄 10px로 잰다. 현지화는 하지 않는다(lang 키는 점선 밑줄로 표시).
+- **아이템 아이콘**: `data/item-atlas.json`(바닐라 1.26.50.4, 1,623개 중 1,538개에 텍스처)으로 숫자 ID를 아이콘에 잇는다. 텍스처가 없는 85개(새 스폰 알, 음반, 하네스 등)는 이름만 보인다. 숫자 ID는 버전과 커스텀 아이템 수에 따라 밀리므로(ANI-06) 다른 버전·서버에서는 다른 아이템이 보일 수 있다. 커스텀 아이템은 그리지 않는다. 블록은 게임에서 잰 카메라(45° 돌리고 30° 숙인 정사영, 정육면체 폭이 아이콘의 7/8)로 정육면체·반 블록·판유리 모양을 그린다. 계단·울타리 같은 다른 모델, 마법 부여 반짝임, 내구도 막대는 없다.
+- **글자**: 줄바꿈과 글자 폭은 게임 글꼴의 폭표(`data/font-metrics.json`)로 잰다. 글자 모양은 브라우저 글꼴이라 획이 게임보다 1px쯤 위로 올라오고, 한 글자 안에서 1px쯤 어긋날 수 있다. 현지화는 하지 않는다(lang 키는 점선 밑줄로 표시).
 - **텍스처**: PNG·JPG만 그린다(TGA 없음). 9-slice는 CSS `border-image`, 틴트는 곱하기 혼합이라 게임 색과 조금 다르다.
 - **크래시는 흉내 내지 않는다.** 크기 바인딩에 숫자가 아닌 값, 문자열 나누기처럼 게임을 죽이는 식은 진단으로만 알린다.
 - **버전**: 바닐라 1.26.50.4 구조 기준이다. 다른 버전의 바닐라 폴더를 넣으면 그 구조로 돈다.
@@ -114,6 +123,7 @@ npm test
 | `src/render.js`, `src/app.js`, `index.html`, `app.css` | 브라우저 GUI | — |
 | `samples/sample-pack.js` | 예제 팩: 커스텀 액션 폼(PAT-01·02), preserved title, 바닐라 없이 도는 놀이터(`demo.playground`) | PAT-01~02, BND-18 |
 | `data/item-atlas.json`, `tools/build-item-atlas.mjs` | 숫자 아이템 ID → 아이콘 텍스처 표와 그것을 바닐라 샘플(`metadata/vanilladata_modules/mojang-items.json`, `item_texture.json`, `blocks.json`, `terrain_texture.json`)에서 만드는 스크립트 | ANI-06 |
+| `src/engine/font.js`, `data/font-metrics.json`, `tools/build-font-metrics.mjs` | 글자 폭과 줄바꿈. 폭표는 설치된 게임의 `font.brarchive`(`default8.png`, `glyph_XX.png`)에서 글자마다 왼쪽·오른쪽 열만 뽑은 숫자다(글꼴 그림은 넣지 않는다) | TXT-* |
 | `cli.mjs`, `serve.mjs` | 명령줄, 로컬 서버 | — |
 | `.github/workflows/pages.yml` | `main`에 올 때마다 테스트 후 GitHub Pages 배포 | — |
 

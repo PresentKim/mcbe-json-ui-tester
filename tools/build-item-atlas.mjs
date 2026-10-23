@@ -4,7 +4,8 @@
 //   node tools/build-item-atlas.mjs [path to bedrock-samples]
 // Items take their icon from item_texture.json, a BP item's minecraft:icon or, failing those, the
 // closest file name under textures/items. Blocks take blocks.json (carried_textures first) through
-// terrain_texture.json and are drawn as a cube, except plants and the like, which show flat.
+// terrain_texture.json and are drawn as a cube, slabs as its lower half, panes and bars as their thin
+// plate, and plants and the like flat.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,12 +70,16 @@ function fuzzyItem(name) {
 }
 
 // blocks whose inventory icon is a flat picture (plants, torches, doors, ...): matched by whole words
-const FLAT = new Set('flower sapling torch rail rails ladder vine vines mushroom fern tallgrass grass_short crop wheat carrots potatoes beetroot kelp seagrass coral deadbush bush lever tripwire hook web cobweb lily waterlily lantern candle chain bars pane sign banner bed door cake dripstone roots sprouts pickle frogspawn lichen petals eyeblossom reeds bamboo propagule button plate repeater comparator hopper cauldron stand pot skull head anvil bell scaffolding campfire rose tulip orchid allium houstonia oxeye cornflower dandelion poppy lilac peony sunflower azure bluet wither cactus_flower pitcher torchflower spore blossom leaf_litter firefly'.split(' '));
+const FLAT = new Set('flower sapling torch rail rails ladder vine vines mushroom fern tallgrass grass_short crop wheat carrots potatoes beetroot kelp seagrass coral deadbush bush lever tripwire hook web cobweb lily waterlily lantern candle chain sign banner bed door cake dripstone roots sprouts pickle frogspawn lichen petals eyeblossom reeds bamboo propagule button plate repeater comparator hopper cauldron stand pot skull head anvil bell scaffolding campfire rose tulip orchid allium houstonia oxeye cornflower dandelion poppy lilac peony sunflower azure bluet wither cactus_flower pitcher torchflower spore blossom leaf_litter firefly'.split(' '));
 const isFlat = (...names) => names.some((s) => s && s.split(/[_/]/).some((w) => FLAT.has(w)));
+// thin blocks (panes, bars) show their block model: a 2-texel-thick plate, its edges in the east texture
+const isPane = (name) => name.split('_').some((w) => w === 'pane' || w === 'bars');
+// slabs are the lower half of the block (measured in game: drawn where a full cube's lower half is)
+const isSlab = (name) => name.split('_').includes('slab') && !name.split('_').includes('double');
 const ALIAS = { cod: 'fish', cooked_cod: 'cooked_fish', salmon: 'salmon', grass_block: 'grass', sea_lantern: 'seaLantern', sugar_cane: 'reeds', lapis_lazuli: 'dye_powder_blue', cocoa_beans: 'dye_powder_brown', ink_sac: 'dye_powder_black', bone_meal: 'dye_powder_white' };
 
 const out = {};
-let stats = { item: 0, block: 0, flatBlock: 0, missing: 0 };
+let stats = { item: 0, block: 0, slab: 0, flatBlock: 0, paneBlock: 0, missing: 0 };
 const missing = [];
 for (const it of items) {
   const name = it.name.split(':')[1];
@@ -88,10 +93,15 @@ for (const it of items) {
   if (!t && bdef) {
     const tex = bdef.carried_textures || bdef.textures;
     const face = (k) => (typeof tex === 'string' ? terrainTexture(tex) : terrainTexture(tex?.[k]) || terrainTexture(tex?.side));
-    const top = face('up'), left = face('south') || face('side'), right = face('east') || face('side');
+    // the icon shows the top, the west side on the left and the front (south) on the right
+    // (measured in game: a furnace's and a chest's front face right)
+    const top = face('up'), left = face('west') || face('side'), right = face('south') || face('side');
     if (top || left) {
-      if (isFlat(name, (left || '').split('/').pop())) { out[id] = { n: name, t: left || top }; stats.flatBlock++; }
-      else { out[id] = { n: name, b: [top || left, left || top, right || left || top] }; stats.block++; }
+      const b = [top || left, left || top, right || left || top];
+      if (isPane(name)) { out[id] = { n: name, p: [left || top, face('east') || left || top] }; stats.paneBlock++; }
+      else if (isSlab(name)) { out[id] = { n: name, b, h: 8 }; stats.slab++; }
+      else if (isFlat(name, (left || '').split('/').pop())) { out[id] = { n: name, t: left || top }; stats.flatBlock++; }
+      else { out[id] = { n: name, b }; stats.block++; }
       continue;
     }
   }

@@ -32,3 +32,11 @@ test('trailing comma is an error and keeps earlier members', () => {
 test('unquoted key is an error', () => {
   assert.match(parseJsonc('{ a: 1 }').error, /따옴표 없는 키/);
 });
+
+test('font layout: words wrap at spaces, a trailing newline adds no line', async () => {
+  const { layoutText } = await import('../src/engine/font.js');
+  const adv = () => 5;
+  const r = layoutText('aaa bbb ccc\n', 1, 40, adv);
+  assert.deepEqual(r.lineTexts.map((l) => l.text), ['aaa bbb', 'ccc']);
+  assert.equal(r.h, 20);
+});

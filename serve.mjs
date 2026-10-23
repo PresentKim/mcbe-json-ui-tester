@@ -30,6 +30,8 @@ function listFiles(root) {
 }
 
 // --pack <dir> (repeatable, bottom of the stack first) loads your own resource packs on start
+// --static <dir> serves a folder at /static/ (scenario files and the like)
+const staticDir = (() => { const i = process.argv.indexOf('--static'); return i >= 0 ? path.resolve(process.argv[i + 1]) : null; })();
 const packDirs = process.argv.flatMap((a, i, all) => (a === '--pack' && all[i + 1] ? [path.resolve(all[i + 1])] : []));
 function listPack(dir) {
   const out = [];
@@ -64,6 +66,15 @@ http.createServer((req, res) => {
     });
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify(packs));
+  }
+  if (staticDir && url.startsWith('/static/')) {
+    const file = path.join(staticDir, url.slice('/static/'.length));
+    if (!path.resolve(file).startsWith(staticDir)) { res.writeHead(403); return res.end(); }
+    return fs.readFile(file, (err, data) => {
+      if (err) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'content-type': types[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' });
+      res.end(data);
+    });
   }
   const pm = url.match(/^\/packs\/(\d+)\/(.+)$/);
   if (pm && packDirs[+pm[1]]) {

@@ -3,6 +3,7 @@ import { parseJsonc } from './engine/jsonc.js';
 import { buildTree, pathOf } from './engine/resolve.js';
 import { Session, walk } from './engine/bind.js';
 import { layoutTree, findOcclusions } from './engine/layout.js';
+import { createMeasure } from './engine/font.js';
 import { evaluate, show, fromJson, lintExpression } from './engine/expr.js';
 import { serverFormHost, hudHost, chestHost, mergeHost, PLATFORMS, SCREENS } from './engine/host.js';
 import { renderTree } from './render.js';
@@ -235,6 +236,15 @@ function textureLookup(path) {
   return found;
 }
 
+// ---------- font metrics ----------
+let fontMeasure = null;
+const layoutOpts = () => (fontMeasure ? { measure: fontMeasure } : {});
+fetch('./data/font-metrics.json').then((r) => (r.ok ? r.json() : null)).then((m) => {
+  if (!m) return;
+  fontMeasure = createMeasure(m);
+  if (state.tree) { layoutTree(state.tree, screenSize(), layoutOpts()); renderAll(); }
+}).catch(() => {});
+
 // ---------- item icons ----------
 let itemAtlas = null;
 fetch('./data/item-atlas.json').then((r) => (r.ok ? r.json() : null)).then((a) => { itemAtlas = a; scheduleRender(); }).catch(() => {});
@@ -248,6 +258,7 @@ function syncHostKind() {
 }
 
 function readHost() {
+  if (state.scenarioHost) return { ...state.scenarioHost, assumeHidden: $('assumeHidden').checked };
   const k = $('hostKind').value;
   let host;
   if (k === 'server_form') {
@@ -294,7 +305,7 @@ function rebuild() {
   state.buildDiags = diags;
   state.session = new Session(state.cat, tree, opts());
   state.session.run(host);
-  layoutTree(tree, screenSize());
+  layoutTree(tree, screenSize(), layoutOpts());
   const ms = Math.round(performance.now() - t0);
   let n = 0; walk(tree, () => n++);
   $('catalogInfo').textContent = `정의 ${state.cat.defs.size}개 · 컨트롤 ${n}개 · ${ms}ms`;
@@ -306,7 +317,7 @@ function tick() {
   if (!state.session) return rebuild();
   state.session.opts = opts();
   state.session.run(readHost());
-  layoutTree(state.tree, screenSize());
+  layoutTree(state.tree, screenSize(), layoutOpts());
   renderAll();
 }
 
@@ -354,7 +365,7 @@ function renderStage() {
       if (state.session.hoverUid === uid) return;
       state.session.hoverUid = uid;
       state.session.applyAll();
-      layoutTree(state.tree, screenSize());
+      layoutTree(state.tree, screenSize(), layoutOpts());
       scheduleRender();
     },
   });
@@ -377,7 +388,7 @@ function pick(uid, fromStage) {
       li.textContent = `${node.name}: ${r.msg}`;
       $('pressLog').prepend(li);
       toast(r.msg);
-      if (r.kind === 'toggle') { state.session.applyAll(); layoutTree(state.tree, screenSize()); }
+      if (r.kind === 'toggle') { state.session.applyAll(); layoutTree(state.tree, screenSize(), layoutOpts()); }
     }
   }
   renderStage();
@@ -541,7 +552,7 @@ $('applyHost').onclick = rebuild;
 $('hostKind').onchange = () => { syncHostKind(); rebuild(); };
 $('rootRef').addEventListener('change', rebuild);
 for (const id of ['mode', 'platform', 'assumeHidden']) $(id).addEventListener('change', rebuild);
-$('screenSize').addEventListener('change', () => { if (state.tree) { layoutTree(state.tree, screenSize()); renderStage(); } });
+$('screenSize').addEventListener('change', () => { if (state.tree) { layoutTree(state.tree, screenSize(), layoutOpts()); renderStage(); } });
 for (const id of ['outlines', 'showHidden']) $(id).addEventListener('change', renderStage);
 $('zoom').addEventListener('input', () => { $('zoomVal').textContent = `${$('zoom').value}×`; renderStage(); });
 $('diagInfo').addEventListener('change', renderDiags);
@@ -571,12 +582,41 @@ async function loadServerPacks() {
   } catch { return false; }
 }
 
+// ?scenario=<url of JSON> loads a saved test: { root, host, screen: {w, h}, zoom, mode, platform }.
+// &view=stage shows only the screen at the top left, for screenshots compared with the game.
+const params = new URLSearchParams(location.search);
+if (params.get('view') === 'stage') document.body.classList.add('stage-only');
+async function applyScenario() {
+  const url = params.get('scenario');
+  if (!url) return false;
+  const sc = await (await fetch(url)).json();
+  if (sc.screen) {
+    const v = `${sc.screen.w}x${sc.screen.h}`;
+    if (![...$('screenSize').options].some((o) => o.value === v)) $('screenSize').append(new Option(`${sc.screen.w}×${sc.screen.h}`, v));
+    $('screenSize').value = v;
+  }
+  if (sc.zoom) { $('zoom').value = String(sc.zoom); $('zoomVal').textContent = `${sc.zoom}×`; }
+  if (sc.mode) $('mode').value = sc.mode;
+  if (sc.platform) $('platform').value = sc.platform;
+  if (sc.root) $('rootRef').value = sc.root;
+  state.scenarioHost = sc.host || null;
+  return true;
+}
+
 // start: try vanilla from the local server, then add the sample pack
 (async () => {
   loadSample();
+  const scenario = await applyScenario().catch((e) => { toast('시나리오를 못 읽었다: ' + e.message); return false; });
   try {
     const r = await fetch('./serve-info', { method: 'HEAD' });
-    if (r.ok) { await loadVanillaFromServer(); $('rootRef').value = 'server_form.third_party_server_screen'; await loadServerPacks(); rebuild(); return; }
+    if (r.ok) { await loadVanillaFromServer(); if (!scenario) $('rootRef').value = 'server_form.third_party_server_screen'; await loadServerPacks(); rebuild(); markReady(); return; }
   } catch { /* opened without the local server */ }
   await loadVanillaFromGitHub();
+  markReady();
 })();
+
+// tells headless screenshot tools that the screen and its textures are drawn
+function markReady() {
+  const imgs = [...state.textureInfo.values()].filter(Boolean);
+  setTimeout(() => { document.body.dataset.ready = '1'; }, imgs.length ? 1500 : 300);
+}
