@@ -1,0 +1,11 @@
+{
+  "name": "jsonui-tester",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser tester for Bedrock resource pack JSON UI, modeled on the engine rules in this repository's guide",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "serve": "node serve.mjs"
+  }
+}
