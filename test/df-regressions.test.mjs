@@ -48,3 +48,27 @@ test('a hidden layout whose length binding waits for "visible" makes nothing (BN
   assert.equal(count('hidden'), 0);
   assert.equal(count('shown'), 5);
 });
+
+test('a scroll view sizes its scrollbar box from the part of the content it shows (measured in game)', () => {
+  // content 400 tall in a 100 tall viewport: the box is a quarter of its 80 tall track
+  const cat = buildCatalog([pack({ 'ui/n.json': JSON.stringify({
+    namespace: 'n',
+    r: {
+      type: 'scroll_view', size: [100, 100],
+      scroll_content: 'content', scroll_view_port: 'port', scrollbar_track: 'track', scrollbar_box: 'box', scroll_box_and_track_panel: 'bar',
+      controls: [
+        { port: { type: 'panel', size: [90, 100], controls: [{ content: { type: 'panel', size: [90, 400] } }] } },
+        { bar: { type: 'panel', size: [6, 100], anchor_from: 'top_right', anchor_to: 'top_right', controls: [
+          { track: { type: 'panel', size: [6, 80] } },
+          { box: { type: 'panel', anchor_from: 'top_left', anchor_to: 'top_left' } },
+        ] } },
+      ],
+    },
+  }) })]);
+  const { tree } = buildTree(cat, 'n.r');
+  new Session(cat, tree).run(host(0));
+  layoutTree(tree, { w: 200, h: 200 });
+  let box = null;
+  walk(tree, (n) => { if (n.name === 'box') box = n; });
+  assert.equal(box.rect.h, 20);
+});

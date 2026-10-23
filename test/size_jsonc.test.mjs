@@ -40,3 +40,14 @@ test('font layout: words wrap at spaces, a trailing newline adds no line', async
   assert.deepEqual(r.lineTexts.map((l) => l.text), ['aaa bbb', 'ccc']);
   assert.equal(r.h, 20);
 });
+
+test('font: in a Korean UI, ASCII in a text with Korean takes the unicode font, ASCII-only text keeps default8 (measured in game)', async () => {
+  const { createMeasure } = await import('../src/engine/font.js');
+  const fs = await import('node:fs');
+  const metrics = JSON.parse(fs.readFileSync(new URL('../data/font-metrics.json', import.meta.url), 'utf8'));
+  const ko = createMeasure(metrics, { unicodeAscii: true }), en = createMeasure(metrics);
+  // "/menu" in a Korean sentence is 20 GUI px in game; alone, as an invite code is, it stays default8
+  assert.equal(ko('/menu 또는').w - ko(' 또는').w, 20.5);
+  assert.equal(ko('§eQHJUJB').w, 36);
+  assert.equal(en('/menu 또는').w - en(' 또는').w, 30);
+});

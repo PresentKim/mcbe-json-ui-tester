@@ -3,14 +3,18 @@
 // ASCII (default8.png): advance = last opaque column + 2; a space is 4.
 // Other characters (glyph_XX.png, 16 px cells drawn at half size): advance = (right + 1 - left) / 2 + 1.
 // A line is 10 px tall at scale 1. Lines break at spaces; a word wider than the line breaks by character.
+// With unicodeAscii (the game in Korean, measured 2026-10-23) a text that has any character outside
+// ASCII takes the advance of its ASCII from glyph_00 too ("/menu" in a Korean sentence is 20 px wide,
+// not 30), while a text of ASCII only keeps default8 (an invite code "QHJUJB" at scale 0.7 is 24.75 px,
+// as default8 gives).
 
-export function createMeasure(metrics) {
+export function createMeasure(metrics, { unicodeAscii = false } = {}) {
   const pages = {};
   for (const [k, v] of Object.entries(metrics.pages || {})) pages[k] = decode(v);
-  const advance = (ch) => {
+  const advance = (ch, unicode) => {
     if (ch === ' ') return 4;
     const cp = ch.codePointAt(0);
-    if (cp < 128) {
+    if (cp < 128 && !unicode) {
       const r = metrics.asciiRight[cp];
       return r < 0 ? 0 : r + 2;
     }
@@ -20,7 +24,11 @@ export function createMeasure(metrics) {
     if (!s) return 4;
     return ((s & 15) + 1 - (s >> 4)) / 2 + 1;
   };
-  return (text, scale = 1, maxWidth = Infinity) => layoutText(String(text ?? ''), scale, maxWidth, advance);
+  return (text, scale = 1, maxWidth = Infinity) => {
+    const t = String(text ?? '');
+    const unicode = unicodeAscii && /[^\x00-\x7f]/.test(t.replace(/§./g, ''));
+    return layoutText(t, scale, maxWidth, (ch) => advance(ch, unicode));
+  };
 }
 
 function decode(b64) {

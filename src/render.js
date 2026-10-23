@@ -131,8 +131,13 @@ function drawImage(el, n, textures, zoom) {
   const ns = info.nineslice;
   if (ns && ns.nineslice_size !== undefined && info.w) {
     // nineslice_size is in base_size units (the sidecar's texture size), not image pixels (LAY-27)
-    const s = Array.isArray(ns.nineslice_size) ? ns.nineslice_size : [ns.nineslice_size, ns.nineslice_size, ns.nineslice_size, ns.nineslice_size];
+    const s = (Array.isArray(ns.nineslice_size) ? ns.nineslice_size : [ns.nineslice_size, ns.nineslice_size, ns.nineslice_size, ns.nineslice_size]).slice();
     const base = Array.isArray(ns.base_size) ? ns.base_size : ns.base_size ? [ns.base_size, ns.base_size] : [info.w, info.h];
+    // Slices that meet or cross on an axis leave CSS nothing but the corners, while the game still
+    // covers the whole control with the texture (measured: vanilla ScrollRail, 1×1 with
+    // nineslice_size 1, is a solid dark rail in game). That axis is then stretched.
+    if (s[0] + s[2] >= base[0]) s[0] = s[2] = 0;
+    if (s[1] + s[3] >= base[1]) s[1] = s[3] = 0;
     const kx = info.w / base[0], ky = info.h / base[1];
     // nineslice_size order is [left, top, right, bottom]; CSS wants top right bottom left
     const sl = [s[1] * ky, s[2] * kx, s[3] * ky, s[0] * kx];
@@ -149,11 +154,12 @@ function drawImage(el, n, textures, zoom) {
     if (tiled === true || tiled === 'x' || tiled === 'y') {
       el.style.backgroundRepeat = tiled === true ? 'repeat' : tiled === 'x' ? 'repeat-x' : 'repeat-y';
       el.style.backgroundSize = info.w ? `${info.w * zoom}px ${info.h * zoom}px` : 'auto';
-    } else if (n.props.keep_ratio !== false && n.props.fill !== true && info.w) {
-      el.style.backgroundSize = 'contain';
+    } else if (n.props.keep_ratio !== false && info.w) {
+      // keep_ratio (on by default) fits the texture inside, centred; with fill it covers and is cut
+      // (ANI-23; measured in game: a 6×27 tree strip in a 4×23 image is 4×18, 2.5 px from each end)
+      el.style.backgroundSize = n.props.fill === true ? 'cover' : 'contain';
       el.style.backgroundRepeat = 'no-repeat';
       el.style.backgroundPosition = 'center';
-      el.style.backgroundSize = '100% 100%';
     } else {
       el.style.backgroundSize = '100% 100%';
     }
@@ -195,10 +201,9 @@ function drawItem(el, n, items, textures, zoom) {
     el.textContent = entry ? entry.n : String(id);
     return true;
   }
-  // Icons are 16 texels drawn at a whole number of screen pixels per texel: a 22 px renderer at
-  // GUI scale 4 is 88 screen px, 5 px per texel, so the icon is 80 px (20 GUI px), centred.
-  const avail = Math.min(n.rect.w, n.rect.h) * zoom;
-  const s = 16 * Math.max(1, Math.floor(avail / 16 + 1e-6));
+  // The icon fills the renderer's square, centred (measured in game 2026-10-23: a book in a 22 px
+  // card renderer at GUI scale 4 is 88 screen px wide, 5.5 px per texel, not rounded down to 5).
+  const s = Math.min(n.rect.w, n.rect.h) * zoom;
   const box = document.createElement('div');
   box.className = 'item-icon';
   Object.assign(box.style, { width: `${s}px`, height: `${s}px`, left: `${(n.rect.w * zoom - s) / 2}px`, top: `${(n.rect.h * zoom - s) / 2}px` });

@@ -237,18 +237,58 @@ function textureLookup(path) {
 }
 
 // ---------- font metrics ----------
-let fontMeasure = null;
+// The game in a Korean UI draws ASCII from the unicode font too (glyph_00), so text in it is
+// narrower than in English.
+let fontMetrics = null, fontMeasure = null;
 const layoutOpts = () => (fontMeasure ? { measure: fontMeasure } : {});
-fetch('./data/font-metrics.json').then((r) => (r.ok ? r.json() : null)).then((m) => {
-  if (!m) return;
-  fontMeasure = createMeasure(m);
+function setFont() {
+  if (!fontMetrics) return;
+  fontMeasure = createMeasure(fontMetrics, { unicodeAscii: $('language').value !== 'en_US' });
   if (state.tree) { layoutTree(state.tree, screenSize(), layoutOpts()); renderAll(); }
-}).catch(() => {});
+}
+fetch('./data/font-metrics.json').then((r) => (r.ok ? r.json() : null)).then((m) => { fontMetrics = m; setFont(); }).catch(() => {});
+$('language').addEventListener('change', setFont);
 
 // ---------- item icons ----------
 let itemAtlas = null;
 fetch('./data/item-atlas.json').then((r) => (r.ok ? r.json() : null)).then((a) => { itemAtlas = a; scheduleRender(); }).catch(() => {});
-const itemLookup = (id) => itemAtlas?.items?.[id] ?? null;
+// A server's own items get their numeric IDs from the server, as the client does (the item
+// registry it sends): a scenario's `items` maps an ID to the identifier, and for a custom block its
+// face textures. Their pictures come from the loaded packs' item_texture.json (keyed by identifier)
+// and terrain_texture.json. Vanilla IDs fall back to data/item-atlas.json.
+const serverItemCache = new Map();
+function packTextureTable(file) {
+  for (let i = state.packs.length - 1; i >= 0; i--) {
+    const e = state.packs[i].textures.get(file);
+    if (e?.text) { const r = parseJsonc(e.text); if (r.value?.texture_data) return r.value.texture_data; }
+  }
+  return null;
+}
+function texturePathOf(table, key) {
+  const t = table?.[key]?.textures;
+  const first = Array.isArray(t) ? t[0] : t;
+  return typeof first === 'string' ? first : first?.path ?? null;
+}
+function serverItem(id) {
+  const it = state.scenarioItems?.[id];
+  if (!it) return null;
+  if (serverItemCache.has(id)) return serverItemCache.get(id);
+  let entry = { n: it.name };
+  if (it.block) {
+    const terrain = packTextureTable('textures/terrain_texture.json');
+    const face = (...keys) => { for (const k of keys) if (it.block.textures?.[k]) return texturePathOf(terrain, it.block.textures[k]); return null; };
+    // the icon shows the top, the west side on the left and the front (south) on the right
+    const top = face('up', '*'), left = face('west', '*'), right = face('south', '*');
+    // a block with a model of its own is drawn as a cube of its textures (models are not drawn)
+    if (top || left) entry = { n: it.name + (it.block.geometry ? ` (${it.block.geometry}: 정육면체로 그림)` : ''), b: [top || left, left || top, right || left || top] };
+  } else {
+    const t = texturePathOf(packTextureTable('textures/item_texture.json'), it.name);
+    if (t) entry = { n: it.name, t };
+  }
+  serverItemCache.set(id, entry);
+  return entry;
+}
+const itemLookup = (id) => serverItem(id) ?? itemAtlas?.items?.[id] ?? null;
 
 // ---------- host ----------
 function syncHostKind() {
@@ -582,7 +622,8 @@ async function loadServerPacks() {
   } catch { return false; }
 }
 
-// ?scenario=<url of JSON> loads a saved test: { root, host, screen: {w, h}, zoom, mode, platform }.
+// ?scenario=<url of JSON> loads a saved test: { root, host, screen: {w, h}, zoom, mode, platform, language,
+// items: { "<numeric ID>": { name, block?: { textures: { up, west, south, "*" … }, geometry? } } } }.
 // &view=stage shows only the screen at the top left, for screenshots compared with the game.
 const params = new URLSearchParams(location.search);
 if (params.get('view') === 'stage') document.body.classList.add('stage-only');
@@ -598,8 +639,11 @@ async function applyScenario() {
   if (sc.zoom) { $('zoom').value = String(sc.zoom); $('zoomVal').textContent = `${sc.zoom}×`; }
   if (sc.mode) $('mode').value = sc.mode;
   if (sc.platform) $('platform').value = sc.platform;
+  if (sc.language) { $('language').value = sc.language; setFont(); }
   if (sc.root) $('rootRef').value = sc.root;
   state.scenarioHost = sc.host || null;
+  state.scenarioItems = sc.items || null;
+  serverItemCache.clear();
   return true;
 }
 

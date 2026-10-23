@@ -94,6 +94,8 @@ export function layoutTree(root, screen, opts = {}) {
   }
   function measureNodeRaw(node, pw, ph, siblingMax, forced) {
     const { res, specs } = sizeOf(node, pw, ph, siblingMax);
+    // a scroll view's engine sizes its scrollbar box (sizeScrollBoxes)
+    if (node.engineSize) for (const ax of [0, 1]) if (node.engineSize[ax] !== undefined) { res[ax] = node.engineSize[ax]; specs[ax] = { kind: 'forced' }; }
     // a stack parent decides the size of a "fill" axis (CN-49)
     if (forced) for (const ax of [0, 1]) if (forced[ax] !== undefined) { res[ax] = forced[ax]; specs[ax] = { kind: 'forced' }; }
     let [w, h] = res;
@@ -247,6 +249,7 @@ export function layoutTree(root, screen, opts = {}) {
   // A scroll view hides its bar panel when the content fits the viewport (CN-51); the layout then
   // runs again so a "fill" viewport takes the bar's place.
   if (hideFittingScrollbars(root)) { cache.clear(); measureNode(root, screen.w, screen.h, [0, 0]); }
+  if (sizeScrollBoxes(root)) { cache.clear(); measureNode(root, screen.w, screen.h, [0, 0]); }
   const [rw, rh] = root.size;
   const [fx, fy] = anchorFactor(root.props.anchor_from), [tx, ty] = anchorFactor(root.props.anchor_to);
   position(root, fx * screen.w - tx * rw, fy * screen.h - ty * rh, 0, null);
@@ -284,6 +287,29 @@ function hideFittingScrollbars(root) {
     const vis = (n, parent) => { n.effVisible = parent && n.eff?.visible !== false; for (const c of n.children) if (!c.ignored) vis(c, n.effVisible); };
     vis(root, true);
   }
+  return changed;
+}
+
+// The scrollbar box of a scroll view whose content overflows is as long as the track times the
+// part of the content the viewport shows, at the top (nothing is scrolled yet). Measured in game
+// 2026-10-23 (dfui help cards, research tree): the JSON gives the box no height; the engine does.
+function sizeScrollBoxes(root) {
+  let changed = false;
+  const visit = (n) => {
+    if (n.ignored) return;
+    const p = n.props;
+    if (p.type === 'scroll_view') {
+      const content = findByName(n, p.scroll_content), port = findByName(n, p.scroll_view_port);
+      const track = findByName(n, p.scrollbar_track), box = findByName(n, p.scrollbar_box);
+      if (content?.size && port?.size && track?.size && box) {
+        const ratio = content.size[1] > port.size[1] + 0.01 ? port.size[1] / content.size[1] : 1;
+        const h = track.size[1] * ratio;
+        if (!box.engineSize || Math.abs(box.engineSize[1] - h) > 0.01) { box.engineSize = [undefined, h]; changed = true; }
+      }
+    }
+    for (const c of n.children) visit(c);
+  };
+  visit(root);
   return changed;
 }
 

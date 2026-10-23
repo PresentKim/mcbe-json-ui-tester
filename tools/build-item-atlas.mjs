@@ -71,7 +71,9 @@ function fuzzyItem(name) {
 
 // blocks whose inventory icon is a flat picture (plants, torches, doors, ...): matched by whole words
 const FLAT = new Set('flower sapling torch rail rails ladder vine vines mushroom fern tallgrass grass_short crop wheat carrots potatoes beetroot kelp seagrass coral deadbush bush lever tripwire hook web cobweb lily waterlily lantern candle chain sign banner bed door cake dripstone roots sprouts pickle frogspawn lichen petals eyeblossom reeds bamboo propagule button plate repeater comparator hopper cauldron stand pot skull head anvil bell scaffolding campfire rose tulip orchid allium houstonia oxeye cornflower dandelion poppy lilac peony sunflower azure bluet wither cactus_flower pitcher torchflower spore blossom leaf_litter firefly'.split(' '));
-const isFlat = (...names) => names.some((s) => s && s.split(/[_/]/).some((w) => FLAT.has(w)));
+// a name that ends in "_block" is a full block whatever its other words (dried_kelp_block, bamboo_block:
+// cubes in game)
+const isFlat = (name, ...more) => !name.endsWith('_block') && [name, ...more].some((s) => s && s.split(/[_/]/).some((w) => FLAT.has(w)));
 // thin blocks (panes, bars) show their block model: a 2-texel-thick plate, its edges in the east texture
 const isPane = (name) => name.split('_').some((w) => w === 'pane' || w === 'bars');
 // slabs are the lower half of the block (measured in game: drawn where a full cube's lower half is)
