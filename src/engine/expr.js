@@ -1,6 +1,6 @@
 // JSON UI binding/variable expression evaluator.
 // Semantics follow the guide chapter 5 (EXP-*) and the Cinnabar reconstruction
-// (cinnabar/README.md 3.6, CN-26..CN-30). Values are tagged:
+// (CN-26..CN-30: the Cinnabar reconstruction of the native evaluator). Values are tagged:
 //   { k: 'int', v } | { k: 'num', v } | { k: 'str', v } | { k: 'bool', v } | { k: 'null' } | { k: 'json', v }
 
 export const NULL = Object.freeze({ k: 'null' });
@@ -294,7 +294,7 @@ export function lintExpression(src) {
   if (/[<>]\s*[#$\w.']+\s*[<>]/.test(outside)) hints.push('사슬 비교는 범위 검사가 아님 [EXP-28]');
   if (/\*\s*1(?![\d.])/.test(outside) || /(?<![\d.])1\s*\*/.test(outside)) hints.push('`* 1`은 숫자 변환이 아님. `(#v - 0)` [EXP-16]');
   if (/(?<![\w.])\d+\.\d+/.test(outside)) hints.push('`0.3`처럼 앞자리가 있는 소수는 정수. `.3`을 쓴다 [EXP-27]');
-  if (/'%\.'\s*\+/.test(src)) hints.push('동적 N 서식은 1.21.130부터 막힘 [EXP-09, 종합-가이드 D-04]');
+  if (/'%\.'\s*\+/.test(src)) hints.push('동적 N 서식은 1.21.130부터 막힘 [EXP-09]');
   return hints;
 }
 

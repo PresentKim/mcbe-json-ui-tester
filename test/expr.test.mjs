@@ -1,4 +1,4 @@
-// Cases from cinnabar/samples/평가기-실행-결과.md section 1 (CN-run, 2026-10-21).
+// Cases from the Cinnabar evaluator run results (section 1, CN-run 2026-10-21) (CN-run, 2026-10-21).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluate, show, fromJson, lintExpression } from '../src/engine/expr.js';

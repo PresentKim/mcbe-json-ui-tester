@@ -1,4 +1,4 @@
-// Scope cases from cinnabar/samples/평가기-실행-결과.md section 3, plus modifications rules.
+// Scope cases from the Cinnabar evaluator run results (section 3, CN-run 2026-10-21), plus modifications rules.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCatalog } from '../src/engine/catalog.js';

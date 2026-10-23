@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.argv.slice(2).find((a) => /^\d+$/.test(a)) || process.env.PORT || 5178);
 // --no-vanilla serves the page alone, the way GitHub Pages does
-const vanilla = process.argv.includes('--no-vanilla') ? path.join(here, '.no-vanilla') : process.env.VANILLA || path.resolve(here, '../../bedrock-samples/resource_pack');
+const candidates = ['../bedrock-samples/resource_pack', '../../bedrock-samples/resource_pack'].map((p) => path.resolve(here, p));
+const vanilla = process.argv.includes('--no-vanilla') ? path.join(here, '.no-vanilla') : process.env.VANILLA || candidates.find((p) => fs.existsSync(p)) || candidates[0];
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.md': 'text/plain' };
 
 function listFiles(root) {

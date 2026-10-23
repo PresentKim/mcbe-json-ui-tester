@@ -1,4 +1,4 @@
-// Size cases from cinnabar/samples/평가기-실행-결과.md section 2, jsonc rules from FILE-30.
+// Size cases from the Cinnabar evaluator run results (section 2, CN-run 2026-10-21), jsonc rules from FILE-30.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSize, resolveTerms } from '../src/engine/size.js';
