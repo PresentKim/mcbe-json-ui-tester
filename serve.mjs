@@ -42,7 +42,7 @@ function listPack(dir) {
       else out.push(r);
     }
   };
-  for (const sub of ['ui', 'textures']) if (fs.existsSync(path.join(dir, sub))) walk(path.join(dir, sub), sub);
+  for (const sub of ['ui', 'textures', 'models']) if (fs.existsSync(path.join(dir, sub))) walk(path.join(dir, sub), sub);
   return out;
 }
 

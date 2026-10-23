@@ -4,6 +4,7 @@ import { buildTree, pathOf } from './engine/resolve.js';
 import { Session, walk } from './engine/bind.js';
 import { layoutTree, findOcclusions } from './engine/layout.js';
 import { createMeasure } from './engine/font.js';
+import { parseGeometryFiles } from './engine/geometry.js';
 import { evaluate, show, fromJson, lintExpression } from './engine/expr.js';
 import { serverFormHost, hudHost, chestHost, mergeHost, PLATFORMS, SCREENS } from './engine/host.js';
 import { renderTree } from './render.js';
@@ -38,10 +39,11 @@ const UI_EXT = /\.(json|r4ui|uidx)$/i;
 
 function packFromEntries(name, entries, vanilla) {
   // entries: [{ rel: 'ui/x.json' | 'textures/ui/a.png', text?, blob?, url? }]
-  const pack = { name, files: {}, textures: new Map(), vanilla };
+  const pack = { name, files: {}, textures: new Map(), models: {}, vanilla };
   for (const e of entries) {
     if (e.rel.startsWith('ui/') && UI_EXT.test(e.rel) && e.text !== undefined) pack.files[e.rel] = e.text;
     else if (e.rel.startsWith('textures/')) pack.textures.set(e.rel, e);
+    else if (e.rel.startsWith('models/') && e.rel.endsWith('.json') && e.text !== undefined) pack.models[e.rel] = e.text;
   }
   return pack;
 }
@@ -51,13 +53,13 @@ async function loadFolder(fileList, vanilla) {
   let packName = null;
   for (const f of fileList) {
     const p = f.webkitRelativePath || f.name;
-    const m = p.match(/(?:^|\/)((?:ui|textures)\/.+)$/);
+    const m = p.match(/(?:^|\/)((?:ui|textures|models)\/.+)$/);
     if (!m) continue;
     packName = packName || p.split('/')[0];
     const rel = m[1];
     if (rel.startsWith('ui/') && UI_EXT.test(rel)) entries.push({ rel, text: await f.text() });
     else if (rel.startsWith('textures/') && /\.(png|jpe?g)$/i.test(rel)) entries.push({ rel, blob: f });
-    else if (rel.startsWith('textures/') && rel.endsWith('.json')) entries.push({ rel, text: await f.text() });
+    else if ((rel.startsWith('textures/') || rel.startsWith('models/')) && rel.endsWith('.json')) entries.push({ rel, text: await f.text() });
   }
   if (!entries.length) { toast('ui/ 또는 textures/ 폴더가 없다. 리소스팩 루트 폴더를 고른다.'); return; }
   const pack = packFromEntries(vanilla ? `vanilla (${packName})` : packName, entries, vanilla);
@@ -269,6 +271,12 @@ function texturePathOf(table, key) {
   const first = Array.isArray(t) ? t[0] : t;
   return typeof first === 'string' ? first : first?.path ?? null;
 }
+let geoCache = { key: null, map: null };
+function geometryIndex() {
+  const key = state.packs.map((p) => p.name).join('|');
+  if (geoCache.key !== key) geoCache = { key, map: parseGeometryFiles(state.packs.flatMap((p) => Object.values(p.models || {}))) };
+  return geoCache.map;
+}
 function serverItem(id) {
   const it = state.scenarioItems?.[id];
   if (!it) return null;
@@ -277,10 +285,18 @@ function serverItem(id) {
   if (it.block) {
     const terrain = packTextureTable('textures/terrain_texture.json');
     const face = (...keys) => { for (const k of keys) if (it.block.textures?.[k]) return texturePathOf(terrain, it.block.textures[k]); return null; };
-    // the icon shows the top, the west side on the left and the front (south) on the right
-    const top = face('up', '*'), left = face('west', '*'), right = face('south', '*');
-    // a block with a model of its own is drawn as a cube of its textures (models are not drawn)
-    if (top || left) entry = { n: it.name + (it.block.geometry ? ` (${it.block.geometry}: 정육면체로 그림)` : ''), b: [top || left, left || top, right || left || top] };
+    const geo = it.block.geometry ? geometryIndex().get(it.block.geometry) : null;
+    if (geo) {
+      // a model of its own: each face takes the texture of its material instance
+      const tex = {};
+      for (const [k, key] of Object.entries(it.block.textures || {})) tex[k] = texturePathOf(terrain, key);
+      entry = { n: `${it.name} (${it.block.geometry})`, m: { geo, tex }, unlit: true };
+    } else {
+      // the icon shows the top, the west side on the left and the front (south) on the right
+      const top = face('up', '*'), left = face('west', '*'), right = face('south', '*');
+      // a model the packs do not have is drawn as a cube of the block's textures
+      if (top || left) entry = { n: it.name + (it.block.geometry ? ` (${it.block.geometry} 없음: 정육면체로 그림)` : ''), b: [top || left, left || top, right || left || top], unlit: true };
+    }
   } else {
     const t = texturePathOf(packTextureTable('textures/item_texture.json'), it.name);
     if (t) entry = { n: it.name, t };

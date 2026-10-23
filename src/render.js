@@ -1,5 +1,6 @@
 // DOM renderer for a laid-out control tree.
 import { walk } from './engine/bind.js';
+import { modelFaces, modelBounds, sphereFit } from './engine/geometry.js';
 
 const COLOR_CODES = {
   0: '#000000', 1: '#0000AA', 2: '#00AA00', 3: '#00AAAA', 4: '#AA0000', 5: '#AA00AA', 6: '#FFAA00', 7: '#AAAAAA',
@@ -196,7 +197,7 @@ function drawItem(el, n, items, textures, zoom) {
   const id = Math.floor(aux / 65536);
   const entry = items(id);
   el.title = entry ? `${entry.n} (#item_id_aux ${aux})` : `#item_id_aux ${aux}`;
-  if (!entry || (!entry.t && !entry.b && !entry.p)) {
+  if (!entry || (!entry.t && !entry.b && !entry.p && !entry.m)) {
     el.classList.add('renderer');
     el.textContent = entry ? entry.n : String(id);
     return true;
@@ -218,21 +219,53 @@ function drawItem(el, n, items, textures, zoom) {
     // Model space is in texels, 0..16: a runs along the left face (west side), b along the right
     // face (front) away from the viewer, y up.
     const c45 = Math.SQRT1_2, s30 = 0.5, c30 = Math.sqrt(3) / 2;
-    // A pane is drawn 1.22 times bigger than the cell (measured: glass_pane 38×61 px where its
-    // plate at this camera would be 31×50). Why is not known; it equals the ratio of the cube's
-    // bounding sphere to the plate's, but a slab is not scaled up that way.
-    const k = ((7 / 8) * s) / (32 * c45) * (entry.p ? 1.22 : 1); // px per texel
+    // A model smaller than the block is drawn bigger, fitted by its bounding sphere and centred
+    // (sphereFit): a pane's 16×16×2 plate 1.22 times (measured: glass_pane 38×61 px, not 31×50).
+    const k = ((7 / 8) * s) / (32 * c45) * (entry.p ? sphereFit([[0, 0, 7], [16, 16, 9]]) : 1); // px per texel
     const ea = [k * c45, k * c45 * s30], eb = [k * c45, -k * c45 * s30], ey = [0, -k * c30];
     const at = (a, y, b) => [0, 1].map((i) => s / 2 + (a - 8) * ea[i] + (y - 8) * ey[i] + (b - 8) * eb[i]);
     const down = [-ey[0], -ey[1]];
+    if (entry.m) {
+      // a block's own model (engine/geometry.js): its -z runs along the left face toward the front
+      // corner, its -x away along the right face
+      entry.m.faces ||= modelFaces(entry.m.geo);
+      entry.m.bounds ||= modelBounds(entry.m.geo);
+      const [lo, hi] = entry.m.bounds, f = sphereFit(entry.m.bounds), mid = [0, 1, 2].map((i) => (lo[i] + hi[i]) / 2);
+      const ma = ea.map((v) => v * f), mb = eb.map((v) => v * f), my = ey.map((v) => v * f);
+      const pt = (p) => [0, 1].map((i) => s / 2 - (p[2] - mid[2]) * ma[i] + (p[1] - mid[1]) * my[i] - (p[0] - mid[0]) * mb[i]);
+      const dir = (d) => [0, 1].map((i) => -d[2] * ma[i] + d[1] * my[i] - d[0] * mb[i]);
+      const { tw, th } = entry.m.geo;
+      for (const fc of entry.m.faces) {
+        const tex = entry.m.tex[fc.material] ?? entry.m.tex['*'];
+        const u = tex && url(tex);
+        if (!u) continue;
+        const [fu, fv, fw, fh] = fc.uv;
+        const u0 = Math.min(fu, fu + fw), v0 = Math.min(fv, fv + fh);
+        const ua = dir(fc.u), va = dir(fc.v), o = pt(fc.o.map((c, i) => c + (u0 - fu) * fc.u[i] + (v0 - fv) * fc.v[i]));
+        const f = document.createElement('div');
+        f.className = 'cube-face';
+        Object.assign(f.style, {
+          backgroundImage: `url("${u}")`, backgroundSize: `${tw}px ${th}px`, backgroundPosition: `${-u0}px ${-v0}px`,
+          width: `${Math.abs(fw)}px`, height: `${Math.abs(fh)}px`,
+          transform: `matrix(${ua[0]},${ua[1]},${va[0]},${va[1]},${o[0]},${o[1]})`,
+        });
+        box.append(f);
+      }
+      el.append(box);
+      return true;
+    }
     const h = entry.h ?? 16;
+    // the sides are darker than the top: 0.73 on the left, 0.5 on the right for vanilla blocks
+    // (measured in game 2026-10-23 on a furnace and a chest); a server's own blocks, cube or model,
+    // are not darkened (a research table and a drawer: all three faces as bright as the texture)
+    const [lt, lr] = entry.unlit ? [1, 1] : [0.73, 0.5];
     // [texture, u axis, v axis, model point of texel (0, 0), light, texel crop [u0, u1, v0, v1]]
     const faces = entry.p
       // a pane is the plate between b = 7 and 9: its left face, then its top and right edges,
       // whose columns 7..9 of the edge texture are the plate's thickness
-      ? [[entry.p[0], ea, down, at(0, 16, 7), 0.8], [entry.p[1], eb, ea, at(0, 16, 0), 1, [7, 9, 0, 16]], [entry.p[1], eb, down, at(16, 16, 0), 0.6, [7, 9, 0, 16]]]
+      ? [[entry.p[0], ea, down, at(0, 16, 7), lt], [entry.p[1], eb, ea, at(0, 16, 0), 1, [7, 9, 0, 16]], [entry.p[1], eb, down, at(16, 16, 0), lr, [7, 9, 0, 16]]]
       // a slab's sides show the lower rows of the side texture, as in the world
-      : [[entry.b[0], eb, ea, at(0, h, 0), 1], [entry.b[1], ea, down, at(0, 16, 0), 0.8, [0, 16, 16 - h, 16]], [entry.b[2], eb, down, at(16, 16, 0), 0.6, [0, 16, 16 - h, 16]]];
+      : [[entry.b[0], eb, ea, at(0, h, 0), 1], [entry.b[1], ea, down, at(0, 16, 0), lt, [0, 16, 16 - h, 16]], [entry.b[2], eb, down, at(16, 16, 0), lr, [0, 16, 16 - h, 16]]];
     for (const [tex, ua, va, o, light, [u0, u1, v0, v1] = [0, 16, 0, 16]] of faces) {
       const f = document.createElement('div');
       f.className = 'cube-face';

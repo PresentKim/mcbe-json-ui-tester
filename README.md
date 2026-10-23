@@ -68,7 +68,7 @@ node serve.mjs 5181 --static ./scenarios
 
 게임 창이 1920×1009이고 GUI 배율이 4면 화면은 480×253이다. 게임은 창 크기를 배율로 나눈 값을 올림한다(실측: 높이가 다른 폼 열 개의 창 위치가 모두 253일 때만 픽셀까지 맞았다).
 
-`items`는 서버가 클라이언트에 보내는 아이템 목록을 흉내 낸다. `{ "<숫자 ID>": { name, block?: { textures: { up, west, south, "*" … }, geometry? } } }`로 서버 아이템의 이름과 커스텀 블록의 면 텍스처 키를 주면, 실린 팩의 `item_texture.json`(이름이 키)과 `terrain_texture.json`에서 그림을 찾는다. 서버 아이템의 숫자 ID는 서버가 정하므로 폼과 같은 실행에서 뽑아야 한다.
+`items`는 서버가 클라이언트에 보내는 아이템 목록을 흉내 낸다. `{ "<숫자 ID>": { name, block?: { textures: { up, west, south, "*", <material instance> … }, geometry? } } }`로 서버 아이템의 이름과 커스텀 블록의 면 텍스처 키(모델이면 material instance 이름이 키)를 주면, 실린 팩의 `item_texture.json`(이름이 키), `terrain_texture.json`, `models/`에서 그림과 모델을 찾는다. 서버 아이템의 숫자 ID는 서버가 정하므로 폼과 같은 실행에서 뽑아야 한다.
 
 `serve.mjs`는 옆 폴더의 `bedrock-samples/resource_pack`(`../bedrock-samples` 또는 `../../bedrock-samples`)을 찾아 바닐라를 바로 불러온다. 다른 위치면 `VANILLA=<resource_pack 경로>`를 준다. 찾지 못하면 웹과 같이 GitHub에서 받는다(`node serve.mjs 5179 --no-vanilla`로 이 상태를 일부러 볼 수 있다). 외부 패키지는 필요 없다(Node 20+).
 
@@ -86,7 +86,7 @@ node cli.mjs --vanilla ../bedrock-samples/resource_pack --pack ./my_rp --root se
 npm test
 ```
 
-89건(식 50, 크기·JSON·글꼴 23, 정의 해석 10, 래치 1, 실제 팩 회귀 4, 아이템 아이콘 1). `node:test`로 돈다.
+94건(식 50, 크기·JSON·글꼴 23, 정의 해석 10, 래치 1, 실제 팩 회귀 4, 아이템 아이콘 1, 블록 모델 5). `node:test`로 돈다.
 
 ## 3. 규칙 ID와 근거
 
@@ -104,7 +104,7 @@ npm test
 
 - **게임이 아니다.** 두 엔진 모델 모두 틀릴 수 있다. 근거끼리 갈리는 곳(예: 식 안의 `$변수` 치환)은 진단에 "게임 확인 필요"로 적는다.
 - **엔진 데이터는 흉내다.** 화면 컨트롤러가 주는 바인딩은 `src/engine/host.js`의 일부만 있다. 모르는 전역값은 없음(또는 `#visible` false)으로 본다. 종이 인형, 스크롤 동작, 애니메이션, 입력 포커스, 소리는 그리지 않는다(아이템이 아닌 엔진 렌더러는 "윤곽"을 켜면 자리표시로 보인다).
-- **아이템 아이콘**: `data/item-atlas.json`(바닐라 1.26.50.4, 1,623개 중 1,538개에 텍스처)으로 숫자 ID를 아이콘에 잇는다. 텍스처가 없는 85개(새 스폰 알, 음반, 하네스 등)는 이름만 보인다. 숫자 ID는 버전과 커스텀 아이템 수에 따라 밀리므로(ANI-06) 다른 버전·서버에서는 다른 아이템이 보일 수 있다. 서버 아이템은 시나리오의 `items`로 잇는다(위 2.2). 아이콘은 렌더러 칸을 가득 채운다(22px 칸이면 22px). 블록은 게임에서 잰 카메라(45° 돌리고 30° 숙인 정사영, 정육면체 폭이 아이콘의 7/8)로 정육면체·반 블록·판유리 모양을 그린다. 계단·울타리 같은 다른 모델과 커스텀 블록의 자체 모델(geo)은 정육면체로 그리고, 마법 부여 반짝임, 내구도 막대는 없다.
+- **아이템 아이콘**: `data/item-atlas.json`(바닐라 1.26.50.4, 1,623개 중 1,538개에 텍스처)으로 숫자 ID를 아이콘에 잇는다. 텍스처가 없는 85개(새 스폰 알, 음반, 하네스 등)는 이름만 보인다. 숫자 ID는 버전과 커스텀 아이템 수에 따라 밀리므로(ANI-06) 다른 버전·서버에서는 다른 아이템이 보일 수 있다. 서버 아이템은 시나리오의 `items`로 잇는다(위 2.2). 아이콘은 렌더러 칸을 가득 채운다(22px 칸이면 22px). 블록은 게임에서 잰 카메라(45° 돌리고 30° 숙인 정사영, 정육면체 폭이 아이콘의 7/8)로 정육면체·반 블록·판유리 모양을 그린다. 서버 블록의 자체 모델(`models/**/*.geo.json`의 bone·cube·회전·면별/박스 UV·material instance)도 그린다(`src/engine/geometry.js`). 게임에서 잰 대로 모델은 경계 구의 크기에 맞춰 키워 가운데 두고(14×15×14 체는 1.12배), 정육면체 블록과 반 바퀴 돌아 보이며(모델의 north 면이 오른쪽), 서버 블록은 옆면을 어둡게 하지 않는다. 바닐라 블록의 옆면 밝기는 왼쪽 0.73, 오른쪽 0.5다(실측). 왼쪽 면이 east인지 거울에 비친 west인지는 좌우가 같은 모델밖에 없어 확인하지 못했다. 면은 깊이 순서로 그려 서로 파고드는 큐브는 틀릴 수 있다. 계단·울타리 같은 바닐라 모델, 마법 부여 반짝임, 내구도 막대는 없다.
 - **글자**: 줄바꿈과 글자 폭은 게임 글꼴의 폭표(`data/font-metrics.json`)로 잰다. 위쪽 "게임 언어"가 한국어면(기본) 한글 등 ASCII 밖 글자가 섞인 글은 ASCII도 유니코드 글꼴(`glyph_00`) 폭을 쓰고, ASCII만 있는 글은 `default8`을 쓴다(게임 실측). 영어면 ASCII는 늘 `default8`이다. 글자 모양은 브라우저 글꼴이라 획이 게임보다 1px쯤 위로 올라오고, 한 글자 안에서 1px쯤 어긋날 수 있다. 현지화는 하지 않는다(lang 키는 점선 밑줄로 표시).
 - **텍스처**: PNG·JPG만 그린다(TGA 없음). 9-slice는 CSS `border-image`, 틴트는 곱하기 혼합이라 게임 색과 조금 다르다.
 - **크래시는 흉내 내지 않는다.** 크기 바인딩에 숫자가 아닌 값, 문자열 나누기처럼 게임을 죽이는 식은 진단으로만 알린다.
@@ -126,6 +126,7 @@ npm test
 | `samples/sample-pack.js` | 예제 팩: 커스텀 액션 폼(PAT-01·02), preserved title, 바닐라 없이 도는 놀이터(`demo.playground`) | PAT-01~02, BND-18 |
 | `data/item-atlas.json`, `tools/build-item-atlas.mjs` | 숫자 아이템 ID → 아이콘 텍스처 표와 그것을 바닐라 샘플(`metadata/vanilladata_modules/mojang-items.json`, `item_texture.json`, `blocks.json`, `terrain_texture.json`)에서 만드는 스크립트 | ANI-06 |
 | `src/engine/font.js`, `data/font-metrics.json`, `tools/build-font-metrics.mjs` | 글자 폭과 줄바꿈. 폭표는 설치된 게임의 `font.brarchive`(`default8.png`, `glyph_XX.png`)에서 글자마다 왼쪽·오른쪽 열만 뽑은 숫자다(글꼴 그림은 넣지 않는다) | TXT-* |
+| `src/engine/geometry.js` | 블록 모델(geo.json)을 아이콘이 보는 면으로 바꾸기: 회전, 보이는 면, 깊이 순서, 경계 구 맞춤 | ANI-06 |
 | `cli.mjs`, `serve.mjs` | 명령줄, 로컬 서버 | — |
 | `.github/workflows/pages.yml` | `main`에 올 때마다 테스트 후 GitHub Pages 배포 | — |
 
