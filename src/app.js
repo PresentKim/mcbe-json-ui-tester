@@ -235,6 +235,11 @@ function textureLookup(path) {
   return found;
 }
 
+// ---------- item icons ----------
+let itemAtlas = null;
+fetch('./data/item-atlas.json').then((r) => (r.ok ? r.json() : null)).then((a) => { itemAtlas = a; scheduleRender(); }).catch(() => {});
+const itemLookup = (id) => itemAtlas?.items?.[id] ?? null;
+
 // ---------- host ----------
 function syncHostKind() {
   const k = $('hostKind').value;
@@ -342,7 +347,7 @@ function renderStage() {
   stage.style.height = `${h * z}px`;
   if (!state.tree) { stage.textContent = ''; return; }
   renderTree(stage, state.tree, {
-    zoom: z, textures: textureLookup, outlines: $('outlines').checked, showHidden: $('showHidden').checked,
+    zoom: z, textures: textureLookup, items: itemLookup, outlines: $('outlines').checked, showHidden: $('showHidden').checked,
     selectedUid: state.selected?.uid,
     onPick: (uid) => pick(uid, true),
     onHover: (uid) => {

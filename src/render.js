@@ -42,7 +42,7 @@ export function formatText(text, base) {
 }
 
 // textures: (path) -> { url, nineslice?: { nineslice_size, base_size } } | null
-export function renderTree(stage, root, { zoom, textures, outlines, showHidden, selectedUid, onPick, onHover }) {
+export function renderTree(stage, root, { zoom, textures, items: itemIcons, outlines, showHidden, selectedUid, onPick, onHover }) {
   stage.textContent = '';
   const items = [];
   let order = 0;
@@ -57,7 +57,9 @@ export function renderTree(stage, root, { zoom, textures, outlines, showHidden, 
     const visible = n.effVisible;
     if (!visible && !showHidden) continue;
     const t = n.props.type;
-    const drawable = t === 'image' || t === 'label' || t === 'custom' || n.props.debug;
+    // engine renderers other than item icons are only placeholders: show them with the outlines
+    const isItem = t === 'custom' && /item_renderer$/.test(n.props.renderer || '');
+    const drawable = t === 'image' || t === 'label' || isItem || (t === 'custom' && outlines) || n.props.debug;
     const showBox = outlines || n.uid === selectedUid;
     if (!drawable && !showBox) continue;
     const { x, y, w, h } = n.rect;
@@ -76,7 +78,11 @@ export function renderTree(stage, root, { zoom, textures, outlines, showHidden, 
     else if (alpha < 1) el.style.opacity = String(Math.max(0, alpha));
     if (t === 'image') { drawImage(el, n, textures, zoom); clipRatio(el, n); }
     else if (t === 'label') drawLabel(el, n, zoom);
-    else if (t === 'custom') {
+    else if (t === 'custom' && /item_renderer$/.test(n.props.renderer || '') && itemIcons && drawItem(el, n, itemIcons, textures, zoom)) {
+      /* drawn as the item's icon */
+    } else if (t === 'custom' && !outlines) {
+      continue;
+    } else if (t === 'custom') {
       el.classList.add('renderer');
       const extra = n.bag?.get('#item_id_aux');
       el.title = n.props.renderer || 'custom';
@@ -165,6 +171,50 @@ function clipRatio(el, n) {
   const pct = Math.min(1, ratio) * 100;
   const inset = { left: `0 ${pct}% 0 0`, right: `0 0 0 ${pct}%`, up: `0 0 ${pct}% 0`, down: `${pct}% 0 0 0` }[n.props.clip_direction || 'left'];
   if (inset) el.style.clipPath = `inset(${inset})`;
+}
+
+// #item_id_aux = numeric ID × 65536 + data (ANI-06); the atlas maps the ID to its icon textures.
+function drawItem(el, n, items, textures, zoom) {
+  const v = n.bag?.get('#item_id_aux') ?? n.bag?.get('#item_renderer_data');
+  if (!v || (v.k !== 'int' && v.k !== 'num')) return false;
+  const aux = Math.trunc(v.v);
+  if (aux === -1 || aux === 0) return true; // empty slot
+  const id = Math.floor(aux / 65536);
+  const entry = items(id);
+  el.title = entry ? `${entry.n} (#item_id_aux ${aux})` : `#item_id_aux ${aux}`;
+  if (!entry || (!entry.t && !entry.b)) {
+    el.classList.add('renderer');
+    el.textContent = entry ? entry.n : String(id);
+    return true;
+  }
+  const s = Math.min(n.rect.w, n.rect.h) * zoom;
+  const box = document.createElement('div');
+  box.className = 'item-icon';
+  Object.assign(box.style, { width: `${s}px`, height: `${s}px`, left: `${(n.rect.w * zoom - s) / 2}px`, top: `${(n.rect.h * zoom - s) / 2}px` });
+  const url = (p) => textures(p)?.url;
+  if (entry.t) {
+    const u = url(entry.t);
+    if (u) box.style.backgroundImage = `url("${u}")`;
+  } else {
+    // isometric cube: top, left (front) and right faces, each a 16×16 texture skewed into place
+    const k = s / 32;
+    const faces = [
+      [entry.b[0], `matrix(${k},${-k / 2},${k},${k / 2},0,${s / 4})`, 1],
+      [entry.b[1], `matrix(${k},${k / 2},0,${k},0,${s / 4})`, 0.8],
+      [entry.b[2], `matrix(${k},${-k / 2},0,${k},${s / 2},${s / 2})`, 0.6],
+    ];
+    for (const [tex, m, light] of faces) {
+      const f = document.createElement('div');
+      f.className = 'cube-face';
+      const u = url(tex);
+      if (u) f.style.backgroundImage = `url("${u}")`;
+      f.style.transform = m;
+      f.style.filter = light < 1 ? `brightness(${light})` : '';
+      box.append(f);
+    }
+  }
+  el.append(box);
+  return true;
 }
 
 function drawLabel(el, n, zoom) {

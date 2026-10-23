@@ -13,13 +13,17 @@ export const PLATFORMS = {
   pocket: { $desktop_screen: false, $pocket_screen: true, $touch: true, $is_pregame: false, $win10_edition: false, $pocket_edition: true, $console_edition: false, $is_console: false, $is_desktop: false, $gamepad: false, $mouse: false },
 };
 
+// Flags the real screen controller answers true on these screens; without them the
+// "unknown global #visible is false" assumption would hide e.g. the close button.
+export const ENGINE_FLAGS = { '#close_button_visible': true };
+
 // form: { kind: 'action'|'modal', title, body, buttons: [{ text, texture }], rows: [{ type, text, ... }] }
 export function serverFormHost(form) {
   const buttons = form.buttons || [];
   if (form.kind === 'modal') {
     const rows = form.rows || [];
     return {
-      globals: { '#title_text': form.title ?? '', '#submit_button_text': form.submit ?? 'Submit', '#custom_form_length': rows.length },
+      globals: { '#title_text': form.title ?? '', '#submit_button_text': form.submit ?? 'Submit', '#custom_form_length': rows.length, ...ENGINE_FLAGS },
       collections: {
         custom_form: rows.map((r) => ({
           role: r.type,
@@ -34,6 +38,7 @@ export function serverFormHost(form) {
   }
   return {
     globals: {
+      ...ENGINE_FLAGS,
       '#title_text': form.title ?? '', '#form_text': form.body ?? '',
       '#form_button_length': buttons.length, '#form_button_contents': buttons.map(() => 'button'),
     },
@@ -67,11 +72,12 @@ export function hudHost(h) {
 // chest: { title, slots: [{ id_aux, count, name }] }
 export function chestHost(c) {
   return {
-    globals: { '#container_title': c.title ?? '' },
+    globals: { '#container_title': c.title ?? '', ...ENGINE_FLAGS },
     hostVars: { $container_title: c.title ?? 'Chest' },
     collections: {
       container_items: (c.slots || []).map((s) => ({
-        '#item_id_aux': s.id_aux ?? -1, '#inventory_stack_count': s.count ? String(s.count) : '', '#hover_text': s.name ?? '',
+        // containers draw items from the engine's #item_renderer_data (1.26.50); the mock keeps the aux value there
+        '#item_id_aux': s.id_aux ?? -1, '#item_renderer_data': s.id_aux ?? -1, '#inventory_stack_count': s.count ? String(s.count) : '', '#hover_text': s.name ?? '',
       })),
     },
     factories: {},

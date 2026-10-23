@@ -37,7 +37,7 @@ jobs:
       - name: Collect site files
         run: |
           mkdir -p _site
-          cp -r index.html app.css src samples docs _site/
+          cp -r index.html app.css src samples docs data _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -63,6 +63,8 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
 .ctl.image.missing { background: repeating-linear-gradient(45deg, #ff00ff55 0 4px, #00000055 4px 8px); }
 .ctl.label { white-space: pre; overflow: visible; font-family: "Minecraft", ui-monospace, Consolas, monospace; color: #fff; }
 .ctl.label.lang-key { text-decoration: underline dotted #ffffff88; }
+.item-icon { position: absolute; background-size: contain; background-repeat: no-repeat; background-position: top center; image-rendering: pixelated; }
+.cube-face { position: absolute; left: 0; top: 0; width: 16px; height: 16px; transform-origin: 0 0; background-size: 16px auto; background-repeat: no-repeat; image-rendering: pixelated; }
 .ctl.renderer { outline: 1px dashed #7fd1ff; color: #7fd1ff; font: 10px ui-monospace, monospace; display: grid; place-items: center; overflow: hidden; background: #7fd1ff14; }
 .ctl.outline { outline: 1px solid #ffffff2a; }
 .ctl.hidden-ctl { opacity: .25; outline: 1px dashed #ff8a8a88; }
