@@ -1,4 +1,5 @@
 import { buildCatalog } from './engine/catalog.js';
+import { parseJsonc } from './engine/jsonc.js';
 import { buildTree, pathOf } from './engine/resolve.js';
 import { Session, walk } from './engine/bind.js';
 import { layoutTree, findOcclusions } from './engine/layout.js';
@@ -79,6 +80,44 @@ async function loadVanillaFromServer() {
   } catch (e) {
     toast('로컬 서버에서 바닐라를 못 읽었다. "바닐라 폴더 고르기"를 쓴다(node serve.mjs로 띄우면 자동).');
   }
+}
+
+// Vanilla 1.26.50.4 straight from GitHub (raw.githubusercontent.com allows CORS), pinned to the guide baseline.
+const VANILLA_SHA = '46ba6ea985fb5a92d79a9419198f10dda14c199d';
+const VANILLA_RAW = `https://raw.githubusercontent.com/Mojang/bedrock-samples/${VANILLA_SHA}/resource_pack/`;
+
+async function loadVanillaFromGitHub() {
+  try {
+    toast('GitHub에서 바닐라 UI 목록을 받는 중');
+    const defsText = await (await fetch(VANILLA_RAW + 'ui/_ui_defs.json')).text();
+    const list = parseUiDefsList(defsText);
+    const want = ['ui/_ui_defs.json', 'ui/_global_variables.json', ...list];
+    const entries = [];
+    let done = 0;
+    const queue = [...new Set(want)];
+    const worker = async () => {
+      while (queue.length) {
+        const rel = queue.shift();
+        const r = await fetch(VANILLA_RAW + rel);
+        if (r.ok) entries.push({ rel, text: await r.text() });
+        done++;
+        if (done % 20 === 0) toast(`GitHub에서 바닐라 받는 중 ${done}/${want.length}`);
+      }
+    };
+    await Promise.all(Array.from({ length: 12 }, worker));
+    const pack = packFromEntries('vanilla 1.26.50.4 (GitHub bedrock-samples)', entries, true);
+    pack.remote = VANILLA_RAW;
+    state.packs = [pack, ...state.packs.filter((p) => !p.vanilla)];
+    $('rootRef').value = 'server_form.third_party_server_screen';
+    afterPacksChanged();
+    toast(`바닐라 UI 파일 ${Object.keys(pack.files).length}개를 GitHub에서 읽었다. 텍스처는 쓸 때 받는다`);
+  } catch (e) {
+    toast('GitHub에서 바닐라를 못 받았다. "바닐라 폴더 고르기"를 쓴다.');
+  }
+}
+
+function parseUiDefsList(text) {
+  return parseJsonc(text).value.ui_defs || [];
 }
 
 function loadSample() {
@@ -175,6 +214,21 @@ function textureLookup(path) {
       img.onload = () => { found.w = img.naturalWidth; found.h = img.naturalHeight; scheduleRender(); };
       img.src = url;
       break;
+    }
+  }
+  if (!found) {
+    // remote vanilla: try the PNG and its 9-slice sidecar on demand
+    const remote = state.packs.find((p) => p.remote);
+    if (remote) {
+      found = { url: `${remote.remote}${path}.png`, nineslice: null };
+      const img = new Image();
+      img.onload = () => { found.w = img.naturalWidth; found.h = img.naturalHeight; scheduleRender(); };
+      img.onerror = () => { state.textureInfo.set(path, null); scheduleRender(); };
+      img.src = found.url;
+      fetch(`${remote.remote}${path}.json`).then((r) => (r.ok ? r.text() : null)).then((txt) => {
+        if (!txt) return;
+        try { found.nineslice = JSON.parse(txt.replace(/\/\/.*$/gm, '')); scheduleRender(); } catch { /* ignore */ }
+      }).catch(() => {});
     }
   }
   state.textureInfo.set(path, found);
@@ -469,6 +523,7 @@ runExpr();
 
 // ---------- wiring ----------
 $('loadVanillaServer').onclick = loadVanillaFromServer;
+$('loadVanillaGitHub').onclick = loadVanillaFromGitHub;
 $('pickVanilla').onchange = (e) => loadFolder(e.target.files, true);
 $('pickPack').onchange = (e) => loadFolder(e.target.files, false);
 $('loadSample').onclick = loadSample;
@@ -498,6 +553,7 @@ if (window.innerWidth < 1100) {
   loadSample();
   try {
     const r = await fetch('./serve-info', { method: 'HEAD' });
-    if (r.ok) { await loadVanillaFromServer(); $('rootRef').value = 'server_form.third_party_server_screen'; rebuild(); }
+    if (r.ok) { await loadVanillaFromServer(); $('rootRef').value = 'server_form.third_party_server_screen'; rebuild(); return; }
   } catch { /* opened without the local server */ }
+  await loadVanillaFromGitHub();
 })();

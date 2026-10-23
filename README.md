@@ -33,7 +33,11 @@
 node jsonui-tester/serve.mjs
 ```
 
-브라우저에서 `http://localhost:5178`을 연다. 서버는 `../../bedrock-samples/resource_pack`(이 저장소 옆의 바닐라 사본)을 찾아 자동으로 불러온다. 다른 위치면 `VANILLA=<resource_pack 경로>`를 준다. 서버 없이 `index.html`을 정적 호스팅해도 되고, 그때는 "바닐라 폴더 고르기"로 `resource_pack` 폴더를 고른다(파일은 브라우저 밖으로 나가지 않는다).
+브라우저에서 `http://localhost:5178`을 연다. 서버는 `../../bedrock-samples/resource_pack`(이 저장소 옆의 바닐라 사본)을 찾아 자동으로 불러온다. 다른 위치면 `VANILLA=<resource_pack 경로>`를 준다.
+
+정적 호스팅(GitHub Pages 등)에서는 바닐라 v1.26.50.4를 GitHub(`Mojang/bedrock-samples` 커밋 `46ba6ea`)에서 직접 받는다. UI 파일 207개를 처음에 받고, 텍스처는 화면에 쓸 때 받는다. 로컬에서 같은 상태를 보려면 `node serve.mjs 5179 --no-vanilla`. "바닐라 폴더 고르기"로 내려받은 `resource_pack` 폴더를 써도 된다. 내 리소스팩 파일은 브라우저 밖으로 나가지 않는다.
+
+배포: `.github/workflows/jsonui-tester.yml`이 `main`에 올 때마다 테스트를 돌리고, 저장소가 공개일 때만 이 폴더(GUI 파일만)를 GitHub Pages로 올린다. 무료 요금제는 비공개 저장소에서 Pages를 쓸 수 없다.
 
 | 영역 | 하는 일 |
 | --- | --- |

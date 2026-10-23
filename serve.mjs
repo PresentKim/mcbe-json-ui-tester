@@ -7,8 +7,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const port = Number(process.argv[2] || process.env.PORT || 5178);
-const vanilla = process.env.VANILLA || path.resolve(here, '../../bedrock-samples/resource_pack');
+const port = Number(process.argv.slice(2).find((a) => /^\d+$/.test(a)) || process.env.PORT || 5178);
+// --no-vanilla serves the page alone, the way GitHub Pages does
+const vanilla = process.argv.includes('--no-vanilla') ? path.join(here, '.no-vanilla') : process.env.VANILLA || path.resolve(here, '../../bedrock-samples/resource_pack');
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.md': 'text/plain' };
 
 function listFiles(root) {

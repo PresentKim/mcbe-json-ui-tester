@@ -39,12 +39,13 @@
     <nav class="tabs" data-group="left"><button data-tab="packs" class="on">팩</button><button data-tab="files">파일</button></nav>
     <section data-panel="packs" class="panel on">
       <div class="btnrow">
+        <button id="loadVanillaGitHub">바닐라 받기 (GitHub)</button>
         <button id="loadVanillaServer">바닐라 불러오기 (로컬 서버)</button>
         <label class="filebtn">바닐라 폴더 고르기<input id="pickVanilla" type="file" webkitdirectory multiple hidden></label>
         <label class="filebtn">내 리소스팩 폴더 추가<input id="pickPack" type="file" webkitdirectory multiple hidden></label>
         <button id="loadSample">예제 팩 넣기</button>
       </div>
-      <p class="hint">팩 순서가 곧 병합 순서다(위가 먼저). 바닐라는 <code>bedrock-samples/resource_pack</code> 폴더를 고른다. 파일은 브라우저 밖으로 나가지 않는다.</p>
+      <p class="hint">팩 순서가 곧 병합 순서다(위가 먼저). 바닐라는 GitHub(<code>Mojang/bedrock-samples</code> v1.26.50.4)에서 받거나 <code>resource_pack</code> 폴더를 고른다. 내 팩 파일은 브라우저 밖으로 나가지 않는다.</p>
       <ol id="packList" class="packlist"></ol>
       <div id="catalogInfo" class="hint"></div>
     </section>
