@@ -21,7 +21,7 @@
 | 검사 | 컨트롤 트리, 정의 사슬, 사각형, 레이어, 속성 주머니, 바인딩, `$` 변수 |
 | 식 실험 | 바인딩 식과 속성 주머니를 넣으면 값과 함정을 바로 보여 준다 |
 
-검증: 식 평가기는 Cinnabar(배드락 클라이언트 재구성) 평가기의 실행 결과 42건과 모두 같은 값을 내고, 크기 식도 16건이 같다. 테스트는 80건이다.
+검증: 식 평가기는 Cinnabar(배드락 클라이언트 재구성) 평가기의 실행 결과 42건과 모두 같은 값을 내고, 크기 식도 16건이 같다. 실제 서버 팩(폼 레이아웃 13종, 버튼 93개짜리 분할 화면, 상자 기계 창, HUD 사이드바를 쓰는 리소스팩 5개 스택)을 해석 오류 없이 돌린다. 테스트는 84건이다.
 
 ## 2. 쓰는 법
 
@@ -52,6 +52,12 @@ cd mcbe-json-ui-tester
 node serve.mjs            # http://localhost:5178
 ```
 
+내 팩을 폴더 선택 없이 바로 띄우려면 아래쪽 팩부터 `--pack`으로 준다(뒤에 준 팩이 이긴다).
+
+```bash
+node serve.mjs 5180 --pack ../packs/theme --pack ../packs/server
+```
+
 `serve.mjs`는 옆 폴더의 `bedrock-samples/resource_pack`(`../bedrock-samples` 또는 `../../bedrock-samples`)을 찾아 바닐라를 바로 불러온다. 다른 위치면 `VANILLA=<resource_pack 경로>`를 준다. 찾지 못하면 웹과 같이 GitHub에서 받는다(`node serve.mjs 5179 --no-vanilla`로 이 상태를 일부러 볼 수 있다). 외부 패키지는 필요 없다(Node 20+).
 
 ### 2.3 명령줄
@@ -68,7 +74,7 @@ node cli.mjs --vanilla ../bedrock-samples/resource_pack --pack ./my_rp --root se
 npm test
 ```
 
-80건(식 50, 크기·JSON 21, 정의 해석 8, 래치 1). `node:test`로 돈다.
+84건(식 50, 크기·JSON 21, 정의 해석 10, 래치 1, 실제 팩 회귀 2). `node:test`로 돈다.
 
 ## 3. 규칙 ID와 근거
 

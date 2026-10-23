@@ -88,3 +88,26 @@ test('an op cannot select an element added earlier in the same block (MOD-17)', 
   const cat = buildCatalog([vanilla, p]);
   assert.deepEqual(kids(buildTree(cat, 'hud.root_panel').tree).map((k) => k[0]), ['a', 'b', 'x']);
 });
+
+test('array elements with ignored are skipped (FILE-18)', async () => {
+  const { Session } = await import('../src/engine/bind.js');
+  const cat = buildCatalog([pack({ 'ui/n.json': JSON.stringify({
+    namespace: 'n',
+    r: { type: 'label', text: '#t', $skip: true, bindings: [
+      { ignored: '$skip', binding_name: '' },
+      { binding_name: '#title_text', binding_name_override: '#t' }] },
+  }) })]);
+  const { tree } = buildTree(cat, 'n.r');
+  const s = new Session(cat, tree);
+  s.run({ globals: { '#title_text': 'ok' }, collections: {}, factories: {} });
+  assert.equal(tree.eff.text, 'ok');
+  assert.equal((tree.bindDiags || []).length, 0);
+});
+
+test("a $ variable holding '#name' makes a binding expression (CN-17)", () => {
+  const cat = buildCatalog([pack({ 'ui/n.json': JSON.stringify({
+    namespace: 'n',
+    r: { type: 'panel', $sel: '#is_selected', bindings: [{ binding_name: '(not $sel)', binding_name_override: '#visible' }] },
+  }) })]);
+  assert.equal(buildTree(cat, 'n.r').tree.props.bindings[0].binding_name, '(not #is_selected)');
+});

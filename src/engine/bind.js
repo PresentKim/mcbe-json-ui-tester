@@ -9,6 +9,19 @@ const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 const CONDITIONS = ['none', 'once', 'always', 'always_when_visible', 'visible', 'visibility_changed'];
 const TYPES = ['global', 'collection', 'collection_details', 'view', 'none'];
 
+// An array element can carry its own `ignored` (FILE-18): a boolean, or a $ expression already folded.
+function elementIgnored(el, node) {
+  const g = el && el.ignored;
+  if (g === undefined || g === null || g === false) return false;
+  if (g === true) return true;
+  if (typeof g === 'number') return g !== 0;
+  if (typeof g === 'string' && g.startsWith('(')) {
+    const r = evaluate(g, { variable: scopeVar(node.scope) });
+    return !r.error && truthy(r.value);
+  }
+  return false;
+}
+
 export function walk(node, fn, includeIgnored = false) {
   if (node.ignored && !includeIgnored) return;
   fn(node);
@@ -27,20 +40,27 @@ export class Session {
 
   diag(node, level, msg) {
     const d = { level, msg, where: pathOf(node) };
-    node.bindDiags.push(d);
+    (node.bindDiags ||= []).push(d);
   }
 
   run(host) {
     this.host = host;
     this.tick++;
     walk(this.tree, (n) => { n.bindDiags = []; });
-    for (let round = 0; round < 8; round++) {
-      this.prepareBags();
-      this.bindAll();
-      if (!this.expandFactories()) break;
+    // A tick runs frames until visibility settles: a layout shown in one frame runs its
+    // "visible" bindings in the next one, as the game does over its next frames.
+    for (let frame = 0; frame < 6; frame++) {
+      for (let round = 0; round < 8; round++) {
+        this.prepareBags();
+        this.bindAll();
+        if (!this.expandFactories()) break;
+      }
+      this.applyAll();
+      let changed = false;
+      walk(this.tree, (n) => { if (n.prevVisible !== n.effVisible) changed = true; n.prevVisible = n.effVisible; n.bound = true; });
+      if (!changed && frame > 0) break;
+      if (frame > 0) this.tick++;
     }
-    this.applyAll();
-    walk(this.tree, (n) => { n.prevVisible = n.effVisible; n.bound = true; });
     return this.tree;
   }
 
@@ -119,6 +139,10 @@ export class Session {
         const n = bound.k === 'bool' ? (bound.v ? 1 : 0) : bound.v;
         roles = Array.from({ length: Math.max(0, n) }, () => null);
       } else roles = [];
+    } else if (this.opts.measured && this.declaresLength(node)) {
+      // the length binding has not run yet (e.g. binding_condition "visible" on a hidden layout):
+      // in game such a layout made no buttons (BND-32); CN-44 would fall back to the collection
+      roles = [];
     } else if (hostF) {
       roles = hostF.roles.slice();
     } else if (cname && this.host.collections?.[cname]) {
@@ -126,6 +150,11 @@ export class Session {
     } else roles = [];
     const max = Number.isInteger(info.max) && info.max > 0 ? info.max : Infinity;
     return roles.slice(0, max);
+  }
+
+  declaresLength(node) {
+    const bs = Array.isArray(node.props.bindings) ? node.props.bindings : [];
+    return bs.some((b) => isObj(b) && !elementIgnored(b, node) && (b.binding_name_override === '#collection_length' || b.binding_name === '#collection_length'));
   }
 
   expandFactories() {
@@ -164,7 +193,7 @@ export class Session {
             child.factoryIndex = i;
             const cb = this.host.factories?.[info.name]?.bag;
             if (cb) child.creationBag = cb;
-            for (const d of env.diags) node.bindDiags.push(d);
+            for (const d of env.diags) (node.bindDiags ||= []).push(d);
             made.push(child);
           });
           node.children = info.insert === 'front' ? [...made, ...node.children] : [...node.children, ...made];
@@ -229,7 +258,7 @@ export class Session {
         if (node.droppedBindings) return;
       }
       bs.forEach((b, i) => {
-        if (!isObj(b)) return;
+        if (!isObj(b) || elementIgnored(b, node)) return;
         let type = b.binding_type ?? 'global';
         if (!TYPES.includes(type)) { this.diag(node, 'warn', `알 수 없는 binding_type '${type}' → global [BND-22]`); type = 'global'; }
         if (type === 'none') return;
@@ -254,7 +283,7 @@ export class Session {
   conditionAllows(node, i, cond) {
     const st = node.bindState;
     const k = `c${i}`;
-    const visible = node.prevVisible ?? true;
+    const visible = node.prevVisible ?? this.initialVisible(node);
     switch (cond) {
       case 'once': if (st.get(k) === this.tick || !st.has(k)) { st.set(k, this.tick); return true; } return false;
       case 'visible': case 'always_when_visible': return visible;
@@ -266,6 +295,16 @@ export class Session {
       }
       default: return true;
     }
+  }
+
+  // Before the first apply, visibility is the literal `visible` of the control and its ancestors:
+  // a layout that starts hidden does not run its `visible` bindings (BND-32).
+  initialVisible(node) {
+    for (let n = node; n; n = n.parent) {
+      if (n.prevVisible !== undefined) return n.prevVisible;
+      if (n.props.visible === false || n.props.visible === 'false') return false;
+    }
+    return true;
   }
 
   write(node, name, val) {
@@ -294,6 +333,11 @@ export class Session {
     if (type === 'collection') {
       const cname = b.binding_collection_name;
       if (!cname) { this.diag(node, 'error', 'Must define a collection name for the binding!'); return; }
+      if (name.startsWith('(')) {
+        const r = evaluate(name, { prop: (k) => { const v = this.collectionValue(node, cname, k); return v === undefined ? undefined : fromJson(v); }, opts: this.opts });
+        if (!r.error) this.write(node, target, r.value);
+        return;
+      }
       const raw = this.collectionValue(node, cname, name);
       if (raw !== undefined) this.write(node, target, fromJson(raw));
       return;
@@ -387,7 +431,7 @@ export class Session {
         if (v !== undefined && v.k !== 'null') {
           if (kind === 'bool') {
             if (v.k === 'bool') return v.v;
-            node.bindDiags.push({ level: 'warn', msg: `${bindName}에 불리언이 아닌 값(${JSON.stringify(toJson(v))})이 들어와 무시된다 [BND-27]`, where: pathOf(node) });
+            (node.bindDiags ||= []).push({ level: 'warn', msg: `${bindName}에 불리언이 아닌 값(${JSON.stringify(toJson(v))})이 들어와 무시된다 [BND-27]`, where: pathOf(node) });
           } else if (kind === 'num') {
             if (v.k === 'int' || v.k === 'num' || v.k === 'bool') return v.k === 'bool' ? +v.v : v.v;
           } else if (kind === 'str') {
@@ -413,7 +457,7 @@ export class Session {
       for (const k of ['#size_binding_x', '#size_binding_y', '#size_binding_x_absolute', '#size_binding_y_absolute', '#anchored_offset_value_x', '#anchored_offset_value_y']) {
         const v = bag.get(k);
         if (v && (v.k === 'int' || v.k === 'num')) eff[k] = v.v;
-        else if (v && v.k !== 'null') node.bindDiags.push({ level: 'error', msg: `${k}에 숫자가 아닌 값 — 게임에서는 크래시 위험 [LAY-14, 5.4절]`, where: pathOf(node) });
+        else if (v && v.k !== 'null') (node.bindDiags ||= []).push({ level: 'error', msg: `${k}에 숫자가 아닌 값 — 게임에서는 크래시 위험 [LAY-14, 5.4절]`, where: pathOf(node) });
       }
       if (!this.opts.measured) {
         const off = bag.get('#offset');
@@ -450,11 +494,11 @@ export class Session {
     for (const k of keys) {
       const name = p[k];
       if (typeof name !== 'string' || !name) {
-        if (k === want && p.type === 'toggle') node.bindDiags.push({ level: 'error', msg: `토글 상태 '${k}'가 정의되지 않아 이 상태에서 컨트롤이 사라진다 [INP-10]`, where: pathOf(node) });
+        if (k === want && p.type === 'toggle') (node.bindDiags ||= []).push({ level: 'error', msg: `토글 상태 '${k}'가 정의되지 않아 이 상태에서 컨트롤이 사라진다 [INP-10]`, where: pathOf(node) });
         continue;
       }
       const target = find(name);
-      if (!target) { if (k === want) node.bindDiags.push({ level: 'warn', msg: `${k} '${name}' 자식이 없다`, where: pathOf(node) }); continue; }
+      if (!target) { if (k === want) (node.bindDiags ||= []).push({ level: 'warn', msg: `${k} '${name}' 자식이 없다`, where: pathOf(node) }); continue; }
       if (k === want) overrides.set(target.uid, true);
       else if (!overrides.has(target.uid)) overrides.set(target.uid, false);
     }
@@ -485,7 +529,7 @@ export class Session {
       btn.bag.set('#toggle_state', fromJson(!(cur && truthy(cur))));
       return { kind: 'toggle', msg: `토글 ${btn.name} → ${!(cur && truthy(cur))}` };
     }
-    const maps = Array.isArray(btn.props.button_mappings) ? btn.props.button_mappings : [];
+    const maps = (Array.isArray(btn.props.button_mappings) ? btn.props.button_mappings : []).filter((m) => !elementIgnored(m, btn));
     const pressed = maps.filter((m) => isObj(m) && (m.from_button_id === 'button.menu_select' || !m.from_button_id) && (m.mapping_type ?? 'pressed') === 'pressed');
     const to = pressed.map((m) => m.to_button_id).filter(Boolean);
     const known = to.find((t) => /^button\.(form_button_click|submit_custom_form|menu_exit|menu_cancel|close|drop_one|drop_all)$/.test(t));

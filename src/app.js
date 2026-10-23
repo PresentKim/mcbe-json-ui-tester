@@ -548,12 +548,30 @@ if (window.innerWidth < 1100) {
   $('zoomVal').textContent = `${$('zoom').value}×`;
 }
 
+// packs given to the local server with --pack (they replace the sample pack)
+async function loadServerPacks() {
+  try {
+    const r = await fetch('./packs-index.json');
+    if (!r.ok) return false;
+    const list = await r.json();
+    if (!list.length) return false;
+    state.packs = state.packs.filter((p) => p.vanilla);
+    for (const sp of list) {
+      const entries = sp.files.map((rel) => (sp.text[rel] !== undefined ? { rel, text: sp.text[rel] } : { rel, url: sp.base + rel }));
+      state.packs.push(packFromEntries(sp.name, entries, false));
+    }
+    afterPacksChanged();
+    toast(`서버가 준 팩 ${list.length}개를 실었다: ${list.map((p) => p.name).join(', ')}`);
+    return true;
+  } catch { return false; }
+}
+
 // start: try vanilla from the local server, then add the sample pack
 (async () => {
   loadSample();
   try {
     const r = await fetch('./serve-info', { method: 'HEAD' });
-    if (r.ok) { await loadVanillaFromServer(); $('rootRef').value = 'server_form.third_party_server_screen'; rebuild(); return; }
+    if (r.ok) { await loadVanillaFromServer(); $('rootRef').value = 'server_form.third_party_server_screen'; await loadServerPacks(); rebuild(); return; }
   } catch { /* opened without the local server */ }
   await loadVanillaFromGitHub();
 })();

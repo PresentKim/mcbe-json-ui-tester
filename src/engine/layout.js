@@ -213,13 +213,14 @@ export function layoutTree(root, screen, opts = {}) {
         const x = fx * w - tx * sz[0] + ox, y = fy * h - ty * sz[1] + oy;
         placed.push({ c, x, y });
         if (c.eff?.visible !== false) {
-          sum[0] += sz[0]; sum[1] += sz[1];
           max[0] = Math.max(max[0], sz[0]); max[1] = Math.max(max[1], sz[1]);
-          extent[0] = Math.max(extent[0], x + sz[0]); extent[1] = Math.max(extent[1], y + sz[1]);
+          // the children's reach measured from the panel's start, independent of where
+          // the anchor would put them in a panel whose size is not known yet
+          extent[0] = Math.max(extent[0], sz[0] + Math.max(0, ox)); extent[1] = Math.max(extent[1], sz[1] + Math.max(0, oy));
         }
       }
-      // %c on a plain panel is the children's extent, not their sum
-      sum[0] = Math.max(sum[0] && extent[0], 0); sum[1] = Math.max(sum[1] && extent[1], 0);
+      // %c on a plain panel is the children's reach, not their sum
+      sum[0] = extent[0]; sum[1] = extent[1];
     }
     node.kidsLayout = placed;
     return { sum, max, extent };

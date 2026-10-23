@@ -88,6 +88,19 @@ export function substitute(value, scope, ctx) {
       return v;
     }
     if (value.startsWith('(') && value.includes('$') && !value.includes('#')) {
+      // a variable holding '#name' turns the expression into a binding expression: inline it (CN-17)
+      const names = value.match(/\$[^\s()'"*+\-/<=>]+/g) || [];
+      const vals = names.map((n) => scope.lookup(n));
+      if (vals.some((v) => typeof v === 'string' && v.startsWith('#'))) {
+        let out = value;
+        names.forEach((n, i) => {
+          const v = vals[i];
+          if (v === undefined) return;
+          const text = typeof v === 'string' ? (v.startsWith('#') ? v : `'${v}'`) : String(v);
+          out = out.split(n).join(text);
+        });
+        return out;
+      }
       const r = evaluate(value, { variable: scopeVar(scope) });
       if (r.error) { ctx.diag('warn', `변수 식 실패: ${value}`); return value; }
       return toJson(r.value);
