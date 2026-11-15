@@ -364,8 +364,13 @@ export class Session {
   }
 
   varFn(node) {
-    if (this.opts.measured) return () => undefined; // partial $ inside expressions is not substituted in game (BND-33)
-    return scopeVar(node.scope);
+    const v = scopeVar(node.scope);
+    if (!this.opts.measured) return v;
+    return (n) => {
+      if (n !== '$container_title') return v(n);
+      if (!node.reportedTitleVar) { node.reportedTitleVar = true; this.diag(node, 'warn', '$container_title은 바인딩 식 안에서 쓰이지 않는다 [HOST-19]. ignored, visible 속성 식이나 복사 변수로 비교한다 [HOST-48]'); }
+      return undefined;
+    };
   }
 
   findSource(node, b) {
@@ -407,10 +412,6 @@ export class Session {
     let r;
     if (/^#[^\s()]+$/.test(src)) r = { value: prop(src) ?? fromJson(null), error: null };
     else r = evaluate(src, { prop, variable: this.varFn(node), opts: this.opts });
-    if (this.opts.measured && r.vars && r.vars.size && !node.reportedVars) {
-      node.reportedVars = true;
-      this.diag(node, 'warn', `실측 우선 모드: 식 안의 ${[...r.vars].join(', ')}를 치환하지 않았다 [BND-33]. 디스코드는 preserved title 패턴에서 이 형태가 동작한다고 보고한다 — 게임 확인 필요 (CN 모드로 바꾸면 치환)`);
-    }
     if (r.error) {
       const hints = lintExpression(src);
       if (!node.reportedExpr) { this.diag(node, 'error', `Invalid expression: ${src}${hints.length ? ' — ' + hints.join(' / ') : ''}`); node.reportedExpr = true; }
@@ -434,6 +435,8 @@ export class Session {
             (node.bindDiags ||= []).push({ level: 'warn', msg: `${bindName}에 불리언이 아닌 값(${JSON.stringify(toJson(v))})이 들어와 무시된다 [BND-27]`, where: pathOf(node) });
           } else if (kind === 'num') {
             if (v.k === 'int' || v.k === 'num' || v.k === 'bool') return v.k === 'bool' ? +v.v : v.v;
+          } else if (kind === 'text') {
+            return v.k === 'str' ? v.v : ''; // a label draws only text values (entity-inventory-ui 2.4, measured)
           } else if (kind === 'str') {
             if (v.k === 'str') return v.v;
             if (v.k === 'int') return String(v.v);
@@ -450,7 +453,7 @@ export class Session {
       eff.alpha = pick('#alpha', 'alpha', 'num') ?? 1;
       if (this.opts.measured && bag.get('#alpha')) eff.alpha = eff.alpha >= 1 ? 1 : eff.alpha <= 0 ? 0 : eff.alpha; // C-45 note in inspector
       eff.clip_ratio = pick('#clip_ratio', 'clip_ratio', 'num') ?? 0;
-      eff.text = pick('#text', 'text', 'str');
+      eff.text = pick('#text', 'text', 'text');
       eff.texture = pick('#texture', 'texture', 'str');
       eff.color = pick('#color', 'color', 'json');
       eff.toggle_state = pick('#toggle_state', null, 'bool');
@@ -510,7 +513,8 @@ export class Session {
     if (typeof v === 'string' && v.startsWith('#') && !v.startsWith('##')) {
       // "#name" property values read the bag after binding (CN-38)
       const b = node.bag?.get(v);
-      if (b === undefined) return prop === 'text' ? '' : undefined;
+      if (prop === 'text') return b !== undefined && b.k === 'str' ? b.v : '';
+      if (b === undefined) return undefined;
       return toJson(b);
     }
     if (typeof v === 'string' && v.startsWith('##')) return v.slice(1);
@@ -541,6 +545,11 @@ export class Session {
       return { kind: 'form', msg: `폼이 닫히고 selection = ${ci ? ci.index : 0} 으로 응답한다` };
     }
     if (known) return { kind: 'engine', msg: `엔진 버튼 ${known}` };
+    if (to.includes('button.container_auto_place')) return { kind: 'engine', msg: '빠른 이동: 칸의 아이템을 바로 옮긴다' };
+    if (to.includes('button.container_take_all_place_all')) {
+      if (btn.scope?.lookup('$touch') === true) return { kind: 'engine', msg: '터치의 칸 누름: 첫 탭은 칸을 고르기만 하고, 다음에 탭한 다른 칸과 아이템을 맞바꾼다. 커서로 가는 아이템은 없다 (entity-inventory-ui 2.5, 실측)' };
+      return { kind: 'engine', msg: '엔진 버튼 button.container_take_all_place_all' };
+    }
     if (to.length) return { kind: 'custom', msg: `엔진이 모르는 버튼 ID ${to.join(', ')} — 폼에 답하지 않고 화면 안 애니메이션만 [INP-20, INP-31]` };
     return { kind: 'none', msg: '눌림 매핑이 없다' };
   }

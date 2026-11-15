@@ -320,6 +320,23 @@ function intersect(a, b) {
 
 export { ANCHORS };
 
+// Engine renderers the game leaves empty (ANI-38, entity-inventory-ui 2.2.3 and 10.1, measured in a chest screen).
+export function findRendererIssues(nodes) {
+  const out = [];
+  for (const n of nodes) {
+    if (n.props.type !== 'custom' || !n.effVisible) continue;
+    const r = n.props.renderer;
+    if ((r === 'inventory_item_renderer' || r === 'live_player_renderer') && n.layerAbs > 94) {
+      out.push({ node: n, level: n.layerAbs >= 99 ? 'warn' : 'info', msg: `${r}의 조상 레이어 합이 ${n.layerAbs}다. 상자 화면 실측에서 합 94까지는 그려지고 99부터 그려지지 않았다(95~98은 시험하지 않음). 이 도구의 합은 바닐라 조상 레이어까지 더한 값이다 [ANI-38]` });
+    }
+    const id = n.bag?.get('#entity_id');
+    if (r === 'live_horse_renderer' && id && (id.k === 'int' || id.k === 'num')) {
+      out.push({ node: n, level: 'warn', msg: `#entity_id가 숫자(${id.v})라 그려지지 않는다. 칸 이름을 큰따옴표로 감싼 "<id>"로 넘겨 글자로 받는다 [EXP-30]` });
+    }
+  }
+  return out;
+}
+
 // Visible labels and images fully covered by an opaque-looking image on a higher layer (LAY-18).
 export function findOcclusions(nodes) {
   const shown = nodes.filter((n) => n.effVisible && n.rect && n.rect.w > 0 && n.rect.h > 0);

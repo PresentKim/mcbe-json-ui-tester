@@ -1,6 +1,8 @@
 // Mock screen controllers: what the game would feed a screen's bindings and engine factories.
 // Names follow vanilla 1.26.50.4 (server_form.json, hud_screen.json, chest_screen.json) and guide chapter 10.
 
+import { num } from './expr.js';
+
 export const SCREENS = {
   server_form: { root: 'server_form.third_party_server_screen', label: '서버 폼 (액션/모달)' },
   hud: { root: 'hud.hud_screen', label: 'HUD' },
@@ -69,7 +71,7 @@ export function hudHost(h) {
   };
 }
 
-// chest: { title, slots: [{ id_aux, count, name }] }
+// chest: { title, slots: [{ id_aux, count, name, durability }] }
 export function chestHost(c) {
   return {
     globals: { '#container_title': c.title ?? '', ...ENGINE_FLAGS },
@@ -77,7 +79,9 @@ export function chestHost(c) {
     collections: {
       container_items: (c.slots || []).map((s) => ({
         // containers draw items from the engine's #item_renderer_data (1.26.50); the mock keeps the aux value there
-        '#item_id_aux': s.id_aux ?? -1, '#item_renderer_data': s.id_aux ?? -1, '#inventory_stack_count': s.count ? String(s.count) : '', '#hover_text': s.name ?? '',
+        '#item_id_aux': s.id_aux ?? -1, '#item_renderer_data': s.id_aux ?? -1, '#inventory_stack_count': s.count > 1 ? String(s.count) : '', '#hover_text': s.name ?? '',
+        // both durability bindings give the maximum durability as a float (HOST-17, entity-inventory-ui 2.4)
+        ...(s.durability != null && { '#item_durability_total_amount': num(s.durability), '#item_durability_current_amount': num(s.durability) }),
       })),
     },
     factories: {},

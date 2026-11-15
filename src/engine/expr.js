@@ -294,7 +294,7 @@ export function lintExpression(src) {
   if (/[<>]\s*[#$\w.']+\s*[<>]/.test(outside)) hints.push('사슬 비교는 범위 검사가 아님 [EXP-28]');
   if (/\*\s*1(?![\d.])/.test(outside) || /(?<![\d.])1\s*\*/.test(outside)) hints.push('`* 1`은 숫자 변환이 아님. `(#v - 0)` [EXP-16]');
   if (/(?<![\w.])\d+\.\d+/.test(outside)) hints.push('`0.3`처럼 앞자리가 있는 소수는 정수. `.3`을 쓴다 [EXP-27]');
-  if (/'%\.'\s*\+/.test(src)) hints.push('동적 N 서식은 1.21.130부터 막힘 [EXP-09]');
+  if (/'%\.'\s*\+/.test(src)) hints.push('`#` 바인딩으로 만드는 동적 N 서식은 1.21.130부터 막혔다는 보고(D-04). 변수 블록 식의 `(\'%.\' + $n + \'s\')`는 1.26.63에서 동작했다');
   return hints;
 }
 

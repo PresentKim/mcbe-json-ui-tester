@@ -2,7 +2,7 @@ import { buildCatalog } from './engine/catalog.js';
 import { parseJsonc } from './engine/jsonc.js';
 import { buildTree, pathOf } from './engine/resolve.js';
 import { Session, walk } from './engine/bind.js';
-import { layoutTree, findOcclusions } from './engine/layout.js';
+import { layoutTree, findOcclusions, findRendererIssues } from './engine/layout.js';
 import { createMeasure } from './engine/font.js';
 import { parseGeometryFiles } from './engine/geometry.js';
 import { evaluate, show, fromJson, lintExpression } from './engine/expr.js';
@@ -327,7 +327,7 @@ function readHost() {
   } else if (k === 'hud') {
     host = hudHost({ title: $('hudTitle').value, subtitle: $('hudSubtitle').value, actionbar: $('hudActionbar').value });
   } else if (k === 'chest') {
-    host = chestHost({ title: $('chestTitle').value, slots: $('chestSlots').value.split('\n').filter(Boolean).map((l) => { const [a, c, n] = l.split('|'); return { id_aux: Number(a), count: Number(c) || 0, name: n }; }) });
+    host = chestHost({ title: $('chestTitle').value, slots: $('chestSlots').value.split('\n').filter(Boolean).map((l) => { const [a, c, n, d] = l.split('|'); return { id_aux: Number(a), count: Number(c) || 0, name: n, durability: d ? Number(d) : undefined }; }) });
   } else host = { globals: {}, collections: {}, factories: {} };
   const extra = $('hostExtra').value.trim();
   if (extra) {
@@ -544,6 +544,7 @@ function renderDiags() {
     for (const { node, by } of findOcclusions(laid)) {
       all.push({ level: 'warn', msg: `라벨 "${String(node.eff.text).slice(0, 20)}"(layer ${node.layerAbs})이 더 높은 레이어의 이미지 ${by.name}(layer ${by.layerAbs})에 가려진다 [LAY-18]`, where: pathOf(node), uid: node.uid });
     }
+    for (const { node, level, msg } of findRendererIssues(laid)) all.push({ level, msg, where: pathOf(node), uid: node.uid });
   }
   if (state.tree) walk(state.tree, (n) => {
     for (const d of n.bindDiags || []) all.push({ ...d, uid: n.uid });

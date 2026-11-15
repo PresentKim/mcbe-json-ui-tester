@@ -24,17 +24,18 @@ export class Scope {
     for (let s = this; s; s = s.parent) if (s.defaults.has(name)) return { value: s.defaults.get(name), scope: s };
     return undefined;
   }
-  lookup(name, depth = 0) {
+  // A variable spliced into an expression goes in as its text; an expression it holds is not evaluated (BND-33).
+  lookup(name, depth = 0, evalExpr = true) {
     const hit = this.raw(name);
     if (!hit) return undefined;
     let v = hit.value;
     if (depth < 8 && typeof v === 'string') {
       if (/^\$[^\s()]+$/.test(v) && v !== name) {
-        const next = this.lookup(v, depth + 1);
+        const next = this.lookup(v, depth + 1, evalExpr);
         return next === undefined ? v : next;
       }
-      if (v.startsWith('(') && !v.includes('#')) {
-        const r = evaluate(v, { variable: (n) => (n === name ? undefined : wrap(this.lookup(n, depth + 1))) });
+      if (evalExpr && v.startsWith('(') && !v.includes('#')) {
+        const r = evaluate(v, { variable: (n) => (n === name ? undefined : wrap(this.lookup(n, depth + 1, false))) });
         return r.error ? v : toJson(r.value);
       }
     }
@@ -44,7 +45,7 @@ export class Scope {
 const wrap = (x) => (x === undefined ? undefined : fromJson(x));
 
 export function scopeVar(scope) {
-  return (n) => wrap(scope.lookup(n));
+  return (n) => wrap(scope.lookup(n, 0, false));
 }
 
 // Flattens the @base chain. Derived properties replace base ones whole (FILE-37, CN-23).
@@ -90,13 +91,14 @@ export function substitute(value, scope, ctx) {
     if (value.startsWith('(') && value.includes('$') && !value.includes('#')) {
       // a variable holding '#name' turns the expression into a binding expression: inline it (CN-17)
       const names = value.match(/\$[^\s()'"*+\-/<=>]+/g) || [];
-      const vals = names.map((n) => scope.lookup(n));
+      const vals = names.map((n) => scope.lookup(n, 0, false));
       if (vals.some((v) => typeof v === 'string' && v.startsWith('#'))) {
         let out = value;
         names.forEach((n, i) => {
           const v = vals[i];
           if (v === undefined) return;
-          const text = typeof v === 'string' ? (v.startsWith('#') ? v : `'${v}'`) : String(v);
+          const q = typeof v === 'string' && v.includes("'") ? '"' : "'";
+          const text = typeof v === 'string' ? (v.startsWith('#') ? v : `${q}${v}${q}`) : String(v);
           out = out.split(n).join(text);
         });
         return out;
@@ -231,7 +233,7 @@ export function instantiate(cat, ref, name, inline, parentScope, parent, env, pe
     resolved[k] = k === 'modifications' ? v : substitute(v, frame, sctx);
   }
   if (Array.isArray(resolved.bindings)) {
-    // whole-value $ substitution works in bindings (BND-12); partial $ inside expressions is kept for bind time
+    // whole-value $ substitution works in bindings (BND-12); $ inside expressions with a #property is substituted at bind time (BND-33)
     resolved.bindings = resolved.bindings.map((b) => (isObj(b) ? substitute(b, frame, sctx) : b));
   }
   node.props = resolved;
