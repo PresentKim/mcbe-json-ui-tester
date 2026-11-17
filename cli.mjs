@@ -2,7 +2,8 @@
 // Headless run of the tester: load packs, build a screen, bind mock host data, lay out, print findings.
 //   node cli.mjs --vanilla <resource_pack dir> [--pack <dir>]... [--sample] --root <ns.name>
 //                [--host server_form|hud|chest|none] [--title T] [--body B] [--buttons "a;b;c"]
-//                [--hud-title T] [--actionbar A] [--cn] [--json]
+//                [--slots slots.json] [--hud-title T] [--actionbar A] [--cn] [--json]
+//   slots.json (chest host): [{ "name": "...", "id_aux": 65536, "count": 1, "durability": 0 }, ...] by slot index
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildCatalog } from './src/engine/catalog.js';
@@ -33,7 +34,7 @@ function readPack(dir, name, vanilla) {
 }
 
 if (flag('help') || !opt('root')) {
-  console.log(fs.readFileSync(new URL(import.meta.url)).toString().split('\n').slice(1, 6).join('\n'));
+  console.log(fs.readFileSync(new URL(import.meta.url)).toString().split('\n').slice(1, 7).join('\n'));
   process.exit(opt('root') ? 0 : 1);
 }
 
@@ -48,7 +49,7 @@ const kind = opt('host', 'server_form');
 let host = { globals: {}, collections: {}, factories: {} };
 if (kind === 'server_form') host = serverFormHost({ kind: 'action', title: opt('title', ''), body: opt('body', ''), buttons: (opt('buttons', '') || '').split(';').filter(Boolean).map((text) => ({ text })) });
 if (kind === 'hud') host = hudHost({ title: opt('hud-title', ''), actionbar: opt('actionbar', '') });
-if (kind === 'chest') host = chestHost({ title: opt('title', 'Chest'), slots: [] });
+if (kind === 'chest') host = chestHost({ title: opt('title', 'Chest'), slots: opt('slots') ? JSON.parse(fs.readFileSync(opt('slots'), 'utf8')) : [] });
 
 const root = opt('root');
 if (!cat.defs.has(root)) { console.error(`UI control reference not found: '${root}'`); process.exit(2); }
