@@ -155,6 +155,17 @@ test('a length computed from #form_button_contents builds nothing (COL-36)', () 
   assert.ok(tree.bindDiags.some((d) => /COL-36/.test(d.msg)));
 });
 
+test('#form_button_length keeps the largest form seen in the session (COL-34)', () => {
+  const cat = buildCatalog([pack({ r: label({ bindings: [{ binding_type: 'view', source_property_name: "('n' + #form_button_length)", target_property_name: '#text' }] }) })]);
+  const { tree } = buildTree(cat, 'n.r');
+  const s = new Session(cat, tree, { measured: true });
+  const host = (n) => ({ globals: { '#form_button_length': n }, collections: {}, factories: {} });
+  s.run(host(93));
+  s.run(host(4));
+  assert.equal(tree.eff.text, 'n93');
+  assert.ok(tree.bindDiags.some((d) => /COL-34/.test(d.msg)));
+});
+
 test('collection_index reads only under a collection stack and never on a label (COL-02, COL-38, COL-50)', () => {
   const cell = (i, type = 'panel') => ({ [`c${type}${i}`]: { type, collection_index: i, size: [10, 10], controls: [{ [`t${type}${i}`]: label({ bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) }] } });
   const lab = (i) => ({ [`l${i}`]: label({ collection_index: i, bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) });

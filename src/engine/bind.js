@@ -68,8 +68,15 @@ export class Session {
       if (!changed && frame > 0) break;
       if (frame > 0) this.tick++;
     }
-    walk(this.tree, (n) => this.checkCollectionProps(n));
+    walk(this.tree, (n) => { this.checkCollectionProps(n); this.checkFormButtonLength(n); });
     return this.tree;
+  }
+
+  checkFormButtonLength(node) {
+    const bs = Array.isArray(node.props.bindings) ? node.props.bindings : [];
+    if (bs.some((b) => isObj(b) && [b.binding_name, b.source_property_name].some((s) => typeof s === 'string' && /#form_button_length(?![\w.:])/.test(s)))) {
+      this.diagOnce(node, 'warn', '#form_button_length는 게임에서 지금까지 보인 가장 큰 폼의 버튼 수로 남는다. 칸 수는 본문 같은 다른 채널로 보낸다 [COL-34]');
+    }
   }
 
   checkCollectionProps(node) {
@@ -409,7 +416,12 @@ export class Session {
 
   globalValue(name) {
     const g = this.host.globals || {};
-    return name in g ? fromJson(g[name]) : undefined;
+    if (!(name in g)) return undefined;
+    if (this.opts.measured && name === '#form_button_length' && typeof g[name] === 'number') {
+      this.largestFormButtonLength = Math.max(this.largestFormButtonLength ?? g[name], g[name]);
+      return fromJson(this.largestFormButtonLength);
+    }
+    return fromJson(g[name]);
   }
 
   varFn(node) {
