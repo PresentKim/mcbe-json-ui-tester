@@ -8,6 +8,8 @@ import { splitKey, qualify } from './catalog.js';
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 const CONDITIONS = ['none', 'once', 'always', 'always_when_visible', 'visible', 'visibility_changed'];
 const TYPES = ['global', 'collection', 'collection_details', 'view', 'none'];
+const COLLECTION_TYPES = ['stack_panel', 'grid', 'collection_panel'];
+const NO_INDEX_TYPES = ['label', 'image'];
 
 // An array element can carry its own `ignored` (FILE-18): a boolean, or a $ expression already folded.
 function elementIgnored(el, node) {
@@ -61,7 +63,18 @@ export class Session {
       if (!changed && frame > 0) break;
       if (frame > 0) this.tick++;
     }
+    walk(this.tree, (n) => this.checkCollectionProps(n));
     return this.tree;
+  }
+
+  checkCollectionProps(node) {
+    const p = node.props;
+    if (typeof p.collection_name === 'string' && p.collection_name !== '' && !COLLECTION_TYPES.includes(p.type)) {
+      this.diag(node, 'error', `Unknown property [collection_name]: ${p.type}에는 컬렉션이 없다. stack_panel, grid, collection_panel에 쓴다 [COL-01]`);
+    }
+    if (p.collection_index === undefined || node.fromFactory) return;
+    if (!this.isCollectionParent(node.parent)) this.diag(node, 'warn', 'Unknown property [collection_index]: collection_name을 가진 stack_panel의 바로 아래 자식에서만 읽힌다 [COL-38, COL-50]');
+    else if (this.opts.measured && NO_INDEX_TYPES.includes(p.type)) this.diag(node, p.type === 'image' ? 'error' : 'warn', `${p.type}의 collection_index는 ${p.type === 'image' ? '거부된다' : '무시된다'}. 패널로 감싸 패널 참조에 준다 [COL-02]`);
   }
 
   prepareBags() {
@@ -91,13 +104,13 @@ export class Session {
 
   // ---------- collections ----------
   isCollectionParent(node) {
-    return node && typeof node.props.collection_name === 'string' && node.props.collection_name !== '';
+    return node && COLLECTION_TYPES.includes(node.props.type) && typeof node.props.collection_name === 'string' && node.props.collection_name !== '';
   }
   collectionItem(node) {
     // a control is a collection item only as a direct child of a collection parent (COL-44, NB-07)
     for (let n = node; n; n = n.parent) {
       if (n.parent && this.isCollectionParent(n.parent) && !n.props.ignoreCollectionItem) {
-        const idx = n.factoryIndex ?? (Number.isInteger(n.props.collection_index) ? n.props.collection_index : -1);
+        const idx = n.factoryIndex ?? (Number.isInteger(n.props.collection_index) && !(this.opts.measured && NO_INDEX_TYPES.includes(n.props.type)) ? n.props.collection_index : -1);
         return { index: idx, collection: n.parent.props.collection_name, item: n };
       }
     }

@@ -11,11 +11,11 @@ const pack = (defs) => ({ name: 'p', files: { 'ui/_ui_defs.json': JSON.stringify
 const label = (props) => ({ type: 'label', text: '#text', ...props });
 const view = (src) => ({ binding_type: 'view', source_property_name: src, target_property_name: '#text' });
 
-function run(defs, globals = {}, opts = { measured: true }, env = {}) {
+function run(defs, globals = {}, opts = { measured: true }, env = {}, collections = {}) {
   const cat = buildCatalog([pack(defs)]);
   const { tree } = buildTree(cat, 'n.r', env);
   const s = new Session(cat, tree, opts);
-  s.run({ globals, collections: {}, factories: {} });
+  s.run({ globals, collections, factories: {} });
   const byName = {};
   walk(tree, (n) => { byName[n.name] = n; });
   return { tree, s, byName };
@@ -115,4 +115,17 @@ test('a digits-only #entity_id on a horse renderer is reported (EXP-30)', () => 
   const { tree } = run({ r: { type: 'panel', controls: [{ digits: horse('d') }, { quoted: horse('q') }] } }, { '#id_d': '-4294967295x', '#id_q': '"-4294967295"x' });
   const issues = findRendererIssues(layoutTree(tree, { w: 100, h: 100 })).map((i) => i.node.name);
   assert.deepEqual(issues, ['digits']);
+});
+
+test('collection_index reads only under a collection stack and never on a label (COL-02, COL-38, COL-50)', () => {
+  const cell = (i, type = 'panel') => ({ [`c${type}${i}`]: { type, collection_index: i, size: [10, 10], controls: [{ [`t${type}${i}`]: label({ bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) }] } });
+  const lab = (i) => ({ [`l${i}`]: label({ collection_index: i, bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) });
+  const { byName } = run({ r: { type: 'panel', controls: [
+    { s: { type: 'stack_panel', collection_name: 'form_buttons', controls: [cell(1), lab(2)] } },
+    { p: { type: 'panel', collection_name: 'form_buttons', controls: [cell(2)] } },
+  ] } }, {}, { measured: true }, {}, { form_buttons: [{ '#form_button_text': 'a' }, { '#form_button_text': 'b' }, { '#form_button_text': 'c' }] });
+  assert.deepEqual([byName.tpanel1.eff.text, byName.tpanel2.eff.text, byName.l2.eff.text], ['b', 'a', '']);
+  assert.ok(byName.p.bindDiags.some((d) => /COL-01/.test(d.msg)));
+  assert.ok(byName.cpanel2.bindDiags.some((d) => /COL-38/.test(d.msg)));
+  assert.ok(byName.l2.bindDiags.some((d) => /COL-02/.test(d.msg)));
 });
