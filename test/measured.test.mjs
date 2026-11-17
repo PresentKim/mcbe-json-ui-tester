@@ -117,6 +117,15 @@ test('a digits-only #entity_id on a horse renderer is reported (EXP-30)', () => 
   assert.deepEqual(issues, ['digits']);
 });
 
+test('alpha and size values in a property_bag apply only when a binding writes them (FILE-24)', () => {
+  const box = (bindings) => ({ type: 'image', size: [20, 20], property_bag: { '#alpha': 0, '#size_binding_x': 0.5, '#size_binding_y': 0.5 }, bindings });
+  const { byName } = run({ r: { type: 'panel', controls: [
+    { bag: box([]) },
+    { bound: box([{ binding_type: 'view', source_property_name: '((#alpha = #alpha) * 0)', target_property_name: '#alpha' }]) },
+  ] } });
+  assert.deepEqual([byName.bag.eff.alpha, byName.bag.eff['#size_binding_x'], byName.bound.eff.alpha], [1, undefined, 0]);
+});
+
 test('collection_index reads only under a collection stack and never on a label (COL-02, COL-38, COL-50)', () => {
   const cell = (i, type = 'panel') => ({ [`c${type}${i}`]: { type, collection_index: i, size: [10, 10], controls: [{ [`t${type}${i}`]: label({ bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) }] } });
   const lab = (i) => ({ [`l${i}`]: label({ collection_index: i, bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) });

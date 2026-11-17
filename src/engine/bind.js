@@ -322,6 +322,7 @@ export class Session {
 
   write(node, name, val) {
     if (val === undefined) return false;
+    (node.boundKeys ||= new Set()).add(name);
     const prev = node.bag.get(name);
     if (prev && prev.k === val.k && JSON.stringify(prev.v) === JSON.stringify(val.v)) return false;
     node.bag.set(name, val);
@@ -463,15 +464,16 @@ export class Session {
       if (eff.visible === undefined) eff.visible = true;
       if (typeof eff.visible === 'string') eff.visible = !(eff.visible === 'false');
       eff.enabled = pick('#enabled', 'enabled', 'bool') ?? true;
-      eff.alpha = pick('#alpha', 'alpha', 'num') ?? 1;
-      if (this.opts.measured && bag.get('#alpha')) eff.alpha = eff.alpha >= 1 ? 1 : eff.alpha <= 0 ? 0 : eff.alpha; // C-45 note in inspector
+      const onlyBound = (k) => !this.opts.measured || node.boundKeys?.has(k);
+      eff.alpha = (onlyBound('#alpha') ? pick('#alpha', 'alpha', 'num') : this.literalProp(node, 'alpha')) ?? 1;
+      if (this.opts.measured && node.boundKeys?.has('#alpha')) eff.alpha = eff.alpha >= 1 ? 1 : eff.alpha <= 0 ? 0 : eff.alpha; // C-45 note in inspector
       eff.clip_ratio = pick('#clip_ratio', 'clip_ratio', 'num') ?? 0;
       eff.text = pick('#text', 'text', 'text');
       eff.texture = pick('#texture', 'texture', 'str');
       eff.color = pick('#color', 'color', 'json');
       eff.toggle_state = pick('#toggle_state', null, 'bool');
       for (const k of ['#size_binding_x', '#size_binding_y', '#size_binding_x_absolute', '#size_binding_y_absolute', '#anchored_offset_value_x', '#anchored_offset_value_y']) {
-        const v = bag.get(k);
+        const v = onlyBound(k) ? bag.get(k) : undefined;
         if (v && (v.k === 'int' || v.k === 'num')) eff[k] = v.v;
         else if (v && v.k !== 'null') (node.bindDiags ||= []).push({ level: 'error', msg: `${k}에 숫자가 아닌 값 — 게임에서는 크래시 위험 [LAY-14, 5.4절]`, where: pathOf(node) });
       }
