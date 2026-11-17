@@ -338,6 +338,38 @@ export function findRendererIssues(nodes) {
   return out;
 }
 
+const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+const isUnder = (n, anc) => { for (let p = n.parent; p; p = p.parent) if (p === anc) return true; return false; };
+
+// Layouts that drew wrong in game although nothing is wrong in this model (FFR, measured on mobile).
+export function findLayoutIssues(nodes) {
+  const out = [];
+  const shown = nodes.filter((n) => n.effVisible && n.rect && n.rect.w > 0 && n.rect.h > 0);
+  const images = shown.filter((n) => n.props.type === 'image' && n.eff?.texture);
+  for (const n of shown) {
+    if (n.props.type !== 'label' || !n.eff?.text) continue;
+    let cell = null, scroll = false;
+    for (let p = n.parent; p; p = p.parent) {
+      if (!cell && p.fromFactory) cell = p;
+      if (cell && p.props.type === 'scroll_view') { scroll = true; break; }
+    }
+    if (!scroll) continue;
+    const bg = images.find((i) => i.layerAbs === n.layerAbs && (i === cell || isUnder(i, cell)) && overlaps(i.rect, n.rect));
+    if (bg) out.push({ node: n, level: 'warn', msg: `스크롤 영역 안 칸의 라벨이 이미지 ${bg.name}와 같은 레이어(${n.layerAbs})라 게임에서는 무언가를 건드리기 전까지 글자가 비었다. 라벨 layer를 이미지보다 높인다 [LAY-55]` });
+  }
+  const buttons = shown.filter((n) => n.props.type === 'button' || n.props.type === 'toggle');
+  for (const v of shown) {
+    if (v.props.type !== 'scroll_view') continue;
+    const r = v.rect;
+    const taken = buttons.filter((b) => !isUnder(b, v) && !isUnder(v, b) && r.x <= b.rect.x + b.rect.w / 2 && b.rect.x + b.rect.w / 2 <= r.x + r.w && r.y <= b.rect.y + b.rect.h / 2 && b.rect.y + b.rect.h / 2 <= r.y + r.h);
+    if (taken.length) out.push({ node: v, level: 'warn', msg: `이 스크롤 영역이 바깥 버튼 ${taken.length}개(${taken.slice(0, 3).map((b) => b.name).join(', ')}) 위를 덮는다. 휴대폰에서는 내용이 비어 있어도 그 영역의 터치를 가져가 버튼이 눌리지 않았다 [LAY-57]` });
+  }
+  for (const g of shown) {
+    if (g.props.type === 'grid' && g.rect.h > 30000) out.push({ node: g, level: 'warn', msg: `grid 높이가 ${Math.round(g.rect.h)}px다. 게임에서는 약 30000px(2열 2000칸)까지 맞았고 45000px(3000칸)부터 칸들이 맨 위 약 200px 안에 겹쳐 그려졌다 [COL-49]` });
+  }
+  return out;
+}
+
 // Visible labels and images fully covered by an opaque-looking image on a higher layer (LAY-18).
 export function findOcclusions(nodes) {
   const shown = nodes.filter((n) => n.effVisible && n.rect && n.rect.w > 0 && n.rect.h > 0);

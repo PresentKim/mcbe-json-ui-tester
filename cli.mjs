@@ -8,7 +8,7 @@ import path from 'node:path';
 import { buildCatalog } from './src/engine/catalog.js';
 import { buildTree, pathOf } from './src/engine/resolve.js';
 import { Session, walk } from './src/engine/bind.js';
-import { layoutTree, findOcclusions, findRendererIssues } from './src/engine/layout.js';
+import { layoutTree, findOcclusions, findRendererIssues, findLayoutIssues } from './src/engine/layout.js';
 import { serverFormHost, hudHost, chestHost, PLATFORMS } from './src/engine/host.js';
 import { SAMPLE_PACK } from './samples/sample-pack.js';
 
@@ -61,7 +61,7 @@ const findings = [...cat.diags.filter((d) => d.level !== 'info'), ...diags];
 let count = 0;
 walk(tree, (n) => { count++; for (const d of n.bindDiags || []) findings.push(d); });
 for (const { node, by } of findOcclusions(laid)) findings.push({ level: 'warn', msg: `라벨 "${node.eff.text}"이 더 높은 레이어의 ${by.name}에 가려진다 [LAY-18]`, where: pathOf(node) });
-for (const { node, level, msg } of findRendererIssues(laid)) if (level !== 'info') findings.push({ level, msg, where: pathOf(node) });
+for (const { node, level, msg } of [...findRendererIssues(laid), ...findLayoutIssues(laid)]) if (level !== 'info') findings.push({ level, msg, where: pathOf(node) });
 const texts = [];
 walk(tree, (n) => { if (n.effVisible && n.props.type === 'label' && n.eff?.text) texts.push({ text: n.eff.text, rect: n.rect && [n.rect.x, n.rect.y, n.rect.w, n.rect.h].map(Math.round), where: pathOf(n) }); });
 

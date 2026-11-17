@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildCatalog } from '../src/engine/catalog.js';
 import { buildTree } from '../src/engine/resolve.js';
 import { Session, walk } from '../src/engine/bind.js';
-import { layoutTree, findRendererIssues } from '../src/engine/layout.js';
+import { layoutTree, findRendererIssues, findLayoutIssues } from '../src/engine/layout.js';
 import { chestHost, PLATFORMS } from '../src/engine/host.js';
 import { fromJson, num } from '../src/engine/expr.js';
 
@@ -186,6 +186,24 @@ test('100%c across a horizontal stack adds the children heights (LAY-52)', () =>
   ] } }] } });
   layoutTree(tree, { w: 200, h: 200 });
   assert.deepEqual(byName.row.size, [100, 80]);
+});
+
+test('scroll cells with a label on its background layer, scroll areas over buttons and tall grids are reported (LAY-55, LAY-57, COL-49)', () => {
+  const cell = (layer) => ({ type: 'panel', size: [40, 20], controls: [
+    { bg: { type: 'image', texture: 'textures/ui/white', size: ['100%', '100%'] } },
+    { t: { type: 'label', text: 'x', layer } },
+  ] });
+  const grid = (tmpl, rows, h = 20) => ({ type: 'grid', grid_dimensions: [1, rows], grid_item_template: tmpl, size: [40, rows * h] });
+  const { tree } = run({
+    same: cell(0), above: cell(3), tall: { type: 'panel', size: [10, 31] },
+    r: { type: 'panel', controls: [
+      { sv: { type: 'scroll_view', size: [100, 100], anchor_from: 'top_left', anchor_to: 'top_left', controls: [{ g1: grid('n.same', 1) }, { g2: { ...grid('n.above', 1), offset: [50, 0] } }] } },
+      { btn: { type: 'button', size: [10, 10], offset: [20, 20], anchor_from: 'top_left', anchor_to: 'top_left' } },
+      { big: grid('n.tall', 1000, 31) },
+    ] },
+  });
+  const issues = findLayoutIssues(layoutTree(tree, { w: 200, h: 200 }));
+  assert.deepEqual(issues.map((i) => [i.node.parent.name, /LAY-55|LAY-57|COL-49/.exec(i.msg)[0]]), [['grid_item0', 'LAY-55'], ['r', 'LAY-57'], ['r', 'COL-49']]);
 });
 
 test('collection_index reads only under a collection stack and never on a label (COL-02, COL-38, COL-50)', () => {
