@@ -180,6 +180,14 @@ test('radio toggles group by toggle_name across parents and start at the default
   assert.deepEqual(state(), [false, false, true, false]);
 });
 
+test('100%c across a horizontal stack adds the children heights (LAY-52)', () => {
+  const { tree, byName } = run({ r: { type: 'panel', controls: [{ row: { type: 'stack_panel', orientation: 'horizontal', size: [100, '100%c'], controls: [
+    { a: { type: 'panel', size: [40, 30] } }, { b: { type: 'panel', size: [40, 50] } },
+  ] } }] } });
+  layoutTree(tree, { w: 200, h: 200 });
+  assert.deepEqual(byName.row.size, [100, 80]);
+});
+
 test('collection_index reads only under a collection stack and never on a label (COL-02, COL-38, COL-50)', () => {
   const cell = (i, type = 'panel') => ({ [`c${type}${i}`]: { type, collection_index: i, size: [10, 10], controls: [{ [`t${type}${i}`]: label({ bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) }] } });
   const lab = (i) => ({ [`l${i}`]: label({ collection_index: i, bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) });

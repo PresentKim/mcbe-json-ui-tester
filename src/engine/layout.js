@@ -165,9 +165,10 @@ export function layoutTree(root, screen, opts = {}) {
         // offset is ignored inside a stack (LAY-38)
         placed.push({ c, x: pos[0], y: pos[1] });
         if (!hidden) cur += sz[ax];
-        if (!hidden) { sum[ax] += sz[ax]; max[ax] = Math.max(max[ax], sz[ax]); sum[cross] = Math.max(sum[cross], sz[cross]); max[cross] = Math.max(max[cross], sz[cross]); }
+        // %c across a stack adds the children too: two boards in a horizontal stack doubled its height (LAY-52)
+        if (!hidden) { sum[ax] += sz[ax]; max[ax] = Math.max(max[ax], sz[ax]); sum[cross] += sz[cross]; max[cross] = Math.max(max[cross], sz[cross]); }
       }
-      extent[ax] = sum[ax]; extent[cross] = sum[cross];
+      extent[ax] = sum[ax]; extent[cross] = max[cross];
     } else if (node.props.type === 'grid') {
       const dims = node.gridDims || node.props.grid_dimensions || null;
       let cellW = 0, cellH = 0;
