@@ -52,7 +52,7 @@ export function scopeVar(scope) {
 export function flatten(cat, id, diag, scope, seen = new Set()) {
   const def = cat.defs.get(id);
   if (!def) return null;
-  if (seen.has(id)) { diag('error', `상속 순환: ${[...seen, id].join(' → ')}`, id); return { props: {}, chain: [id], propNs: {} }; }
+  if (seen.has(id)) { diag('error', `상속 순환: ${[...seen, id].join(' → ')}`, id); return { props: {}, chain: [id], propNs: {}, pathKeys: [] }; }
   seen.add(id);
   let base = null;
   if (def.base) {

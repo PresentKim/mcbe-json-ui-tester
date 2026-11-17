@@ -111,3 +111,9 @@ test("a $ variable holding '#name' makes a binding expression (CN-17)", () => {
   }) })]);
   assert.equal(buildTree(cat, 'n.r').tree.props.bindings[0].binding_name, '(not #is_selected)');
 });
+
+test('a definition based on itself reports a cycle instead of throwing', () => {
+  const cat = buildCatalog([pack({ 'ui/n.json': JSON.stringify({ namespace: 'n', 'r@n.r': { type: 'panel' } }) })]);
+  const { diags } = buildTree(cat, 'n.r');
+  assert.ok(diags.some((d) => /상속 순환/.test(d.msg)));
+});
