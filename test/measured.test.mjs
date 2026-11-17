@@ -126,6 +126,35 @@ test('alpha and size values in a property_bag apply only when a binding writes t
   assert.deepEqual([byName.bag.eff.alpha, byName.bag.eff['#size_binding_x'], byName.bound.eff.alpha], [1, undefined, 0]);
 });
 
+test('a factory inside a pack factory cell builds only with an always length (COL-48)', () => {
+  const len = (cond) => [{ binding_name: '#n', binding_name_override: '#collection_length', ...(cond && { binding_condition: cond }) }];
+  const cat = buildCatalog([pack({
+    r: { type: 'panel', controls: [{ outer: { type: 'factory', control_ids: { x: '@n.layout' } } }] },
+    layout: { type: 'panel', controls: [
+      { fa: { type: 'stack_panel', factory: { name: 'fa', control_name: '@n.cell_default' }, bindings: len() } },
+      { fb: { type: 'stack_panel', factory: { name: 'fb', control_name: '@n.cell_always' }, bindings: len() } },
+    ] },
+    cell_default: { type: 'panel', controls: [{ inner: { type: 'stack_panel', factory: { name: 'g', control_name: '@n.leaf' }, bindings: len() } }] },
+    cell_always: { type: 'panel', controls: [{ inner: { type: 'stack_panel', factory: { name: 'g', control_name: '@n.leaf' }, bindings: len('always') } }] },
+    leaf: { type: 'panel', size: [1, 1] },
+  })]);
+  const { tree } = buildTree(cat, 'n.r');
+  new Session(cat, tree, { measured: true }).run({ globals: { '#n': 2 }, collections: {}, factories: { outer: { roles: ['x'], vars: {} } } });
+  const leaves = (name) => { let n = 0; walk(tree, (c) => { if (c.name === 'inner_item' && c.parent.parent.parent.name === name) n++; }); return n; };
+  assert.deepEqual([leaves('fa'), leaves('fb')], [0, 4]);
+});
+
+test('a length computed from #form_button_contents builds nothing (COL-36)', () => {
+  const cat = buildCatalog([pack({
+    r: { type: 'stack_panel', factory: { name: 'f', control_name: '@n.leaf' }, bindings: [{ binding_name: '(#form_button_length * 1)', binding_name_override: '#collection_length' }] },
+    leaf: { type: 'panel', size: [1, 1] },
+  })]);
+  const { tree } = buildTree(cat, 'n.r');
+  new Session(cat, tree, { measured: true }).run({ globals: { '#form_button_length': 3 }, collections: {}, factories: {} });
+  assert.equal(tree.children.length, 0);
+  assert.ok(tree.bindDiags.some((d) => /COL-36/.test(d.msg)));
+});
+
 test('collection_index reads only under a collection stack and never on a label (COL-02, COL-38, COL-50)', () => {
   const cell = (i, type = 'panel') => ({ [`c${type}${i}`]: { type, collection_index: i, size: [10, 10], controls: [{ [`t${type}${i}`]: label({ bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) }] } });
   const lab = (i) => ({ [`l${i}`]: label({ collection_index: i, bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) });

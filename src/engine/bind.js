@@ -10,6 +10,7 @@ const CONDITIONS = ['none', 'once', 'always', 'always_when_visible', 'visible', 
 const TYPES = ['global', 'collection', 'collection_details', 'view', 'none'];
 const COLLECTION_TYPES = ['stack_panel', 'grid', 'collection_panel'];
 const NO_INDEX_TYPES = ['label', 'image'];
+const FORM_BUTTON_EXPR = /^\(.*#form_button_(contents|length)(?![\w.:])/;
 
 // An array element can carry its own `ignored` (FILE-18): a boolean, or a $ expression already folded.
 function elementIgnored(el, node) {
@@ -43,6 +44,10 @@ export class Session {
   diag(node, level, msg) {
     const d = { level, msg, where: pathOf(node) };
     (node.bindDiags ||= []).push(d);
+  }
+
+  diagOnce(node, level, msg) {
+    if (!(node.bindDiags || []).some((d) => d.msg === msg)) this.diag(node, level, msg);
   }
 
   run(host) {
@@ -146,7 +151,11 @@ export class Session {
     const cname = node.props.collection_name;
     const hostF = this.host.factories?.[info.name];
     let roles;
-    if (bound && bound.k !== 'null') {
+    const blocked = this.opts.measured && this.blockedLength(node);
+    if (blocked) {
+      this.diagOnce(node, 'warn', blocked);
+      roles = [];
+    } else if (bound && bound.k !== 'null') {
       if (bound.k === 'json' && Array.isArray(bound.v)) roles = bound.v.map(String);
       else if (bound.k === 'int' || bound.k === 'bool') {
         const n = bound.k === 'bool' ? (bound.v ? 1 : 0) : bound.v;
@@ -165,9 +174,29 @@ export class Session {
     return roles.slice(0, max);
   }
 
-  declaresLength(node) {
+  bindingsTo(node, target) {
     const bs = Array.isArray(node.props.bindings) ? node.props.bindings : [];
-    return bs.some((b) => isObj(b) && !elementIgnored(b, node) && (b.binding_name_override === '#collection_length' || b.binding_name === '#collection_length'));
+    return bs.filter((b) => isObj(b) && !elementIgnored(b, node) && (b.binding_name_override === target || b.binding_name === target || b.target_property_name === target));
+  }
+
+  declaresLength(node) {
+    return this.bindingsTo(node, '#collection_length').length > 0;
+  }
+
+  blockedLength(node) {
+    const bs = this.bindingsTo(node, '#collection_length');
+    if (bs.some((b) => FORM_BUTTON_EXPR.test((b.binding_type === 'view' ? b.source_property_name : b.binding_name) ?? ''))) {
+      return '#form_button_contents·#form_button_length를 식으로 계산한 길이로는 게임에서 버튼을 만들지 않았다. binding_name_override로 그대로 옮긴다 [COL-36]';
+    }
+    if (bs.length && !bs.some((b) => b.binding_condition === 'always') && this.insidePackFactoryCell(node)) {
+      return '팩토리가 만든 칸 안의 팩토리는 길이 바인딩이 always가 아니면 게임에서 처음에 아무것도 만들지 않았다. 길이와 그 원본 바인딩에 binding_condition "always"를 주거나 grid를 쓴다 [COL-48]';
+    }
+    return null;
+  }
+
+  insidePackFactoryCell(node) {
+    for (let n = node.parent; n; n = n.parent) if (n.madeBy === 'factory' && !n.madeByHost) return true;
+    return false;
   }
 
   expandFactories() {
@@ -204,6 +233,8 @@ export class Session {
             const child = instantiate(this.cat, qualify(base, node.ns), name, {}, scope, node, env);
             child.fromFactory = true;
             child.factoryIndex = i;
+            child.madeBy = 'factory';
+            child.madeByHost = !!this.host.factories?.[info.name];
             const cb = this.host.factories?.[info.name]?.bag;
             if (cb) child.creationBag = cb;
             for (const d of env.diags) (node.bindDiags ||= []).push(d);
@@ -236,6 +267,9 @@ export class Session {
     else if (p.collection_name && this.host.collections?.[p.collection_name]) count = this.host.collections[p.collection_name].length;
     else count = 0;
     if (dims && p.grid_rescaling_type == null) count = Math.min(count, dims[0] * dims[1]);
+    if (this.opts.measured && this.bindingsTo(node, '#maximum_grid_items').some((b) => FORM_BUTTON_EXPR.test((b.binding_type === 'view' ? b.source_property_name : b.binding_name) ?? ''))) {
+      this.diagOnce(node, 'warn', '#form_button_contents·#form_button_length를 식으로 계산한 격자 크기는 게임에서 맞게 정해지지 않았다. binding_name_override로 그대로 옮긴다 [COL-36]');
+    }
     const key = `grid:${count}:${JSON.stringify(dims)}`;
     if (node.factoryKey === key) return false;
     node.factoryKey = key;
@@ -247,6 +281,7 @@ export class Session {
       const child = instantiate(this.cat, qualify(base || name, node.ns), `${name || 'grid_item'}${i}`, {}, node.scope, node, env);
       child.fromFactory = true;
       child.factoryIndex = i;
+      child.madeBy = 'grid';
       node.children.push(child);
     }
     return true;
