@@ -77,6 +77,7 @@ const DOT_FLOAT = /^\s*([+-]?\.\d+(?:[eE][+-]?\d+)?)/;
 // Re-reads a word the way the tokenizer would (CN-26, CN-29).
 export function classifyWord(w) {
   const lower = w.toLowerCase();
+  if (w.length > 1 && (w[0] === "'" || w[0] === '"') && w.indexOf(w[0], 1) === w.length - 1) return str(w.slice(1, -1));
   if (w.startsWith('#')) return str(w); // property names stay text until a group closes
   const mi = INT_PREFIX.exec(w);
   if (mi) {

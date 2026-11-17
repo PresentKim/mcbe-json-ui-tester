@@ -79,6 +79,11 @@ test('literal is not truncated in game mode (EXP-10)', () => {
   assert.equal(show(evaluate("('%.3s' * 'abcdef')", { opts: { literalNoTruncate: true } }).value), 'Text("abcdef")');
   assert.equal(show(evaluate("('%.3s' * 'abcdef')", {}).value), 'Text("abc")');
 });
+test('a result wrapped in quotes is read back as the text between them (entity-doll-probe 3.1)', () => {
+  const c = { prop: (n) => fromJson({ '#h': '§o§f"-4294967295"§r', '#hi': -4294, '#lo': 967295 }[n]) };
+  assert.equal(show(evaluate("(#h - '§o' - '§f' - '§r')", c).value), 'Text("-4294967295")');
+  assert.equal(show(evaluate(`('"' + #hi + #lo + '"')`, c).value), 'Text("-4294967295")');
+});
 test('variables resolve, missing ones are null', () => {
   const c = { variable: (n) => (n === '$a' ? fromJson(3) : undefined) };
   assert.equal(show(evaluate('($a + 2)', c).value), 'Int(5)');
