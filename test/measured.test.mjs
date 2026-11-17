@@ -166,6 +166,20 @@ test('#form_button_length keeps the largest form seen in the session (COL-34)', 
   assert.ok(tree.bindDiags.some((d) => /COL-34/.test(d.msg)));
 });
 
+test('radio toggles group by toggle_name across parents and start at the default index (INP-12, INP-35)', () => {
+  const radio = (extra = {}) => ({ type: 'toggle', radio_toggle_group: true, toggle_name: 'tab', toggle_group_default_selected: 1, toggle_on_button: 'on', toggle_off_button: 'off', ...extra });
+  const { byName, s } = run({ r: { type: 'panel', controls: [
+    { row1: { type: 'stack_panel', controls: [{ a: radio() }, { b: radio() }] } },
+    { row2: { type: 'stack_panel', controls: [{ c: radio() }] } },
+    { none: radio({ toggle_name: 'other', toggle_group_default_selected: -1 }) },
+  ] } });
+  const state = () => ['a', 'b', 'c', 'none'].map((n) => byName[n].eff.toggle_state);
+  assert.deepEqual(state(), [false, true, false, false]);
+  s.press(byName.c);
+  s.applyAll();
+  assert.deepEqual(state(), [false, false, true, false]);
+});
+
 test('collection_index reads only under a collection stack and never on a label (COL-02, COL-38, COL-50)', () => {
   const cell = (i, type = 'panel') => ({ [`c${type}${i}`]: { type, collection_index: i, size: [10, 10], controls: [{ [`t${type}${i}`]: label({ bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) }] } });
   const lab = (i) => ({ [`l${i}`]: label({ collection_index: i, bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) });

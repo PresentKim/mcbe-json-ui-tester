@@ -59,6 +59,7 @@ export class Session {
     for (let frame = 0; frame < 6; frame++) {
       for (let round = 0; round < 8; round++) {
         this.prepareBags();
+        this.initRadioToggles();
         this.bindAll();
         if (!this.expandFactories()) break;
       }
@@ -112,6 +113,29 @@ export class Session {
       for (const c of node.children) if (!c.ignored) setup(c, next);
     };
     setup(this.tree, new Map());
+  }
+
+  radioGroup(node) {
+    const isRadio = (n) => n.props.type === 'toggle' && (n.props.radio_toggle_group === true || n.props.radio_toggle_group === 'true');
+    if (!isRadio(node)) return null;
+    const members = [];
+    walk(this.tree, (n) => { if (isRadio(n) && n.props.toggle_name === node.props.toggle_name) members.push(n); });
+    return members;
+  }
+
+  // Radio toggles group by toggle_name across parents; the one whose index equals
+  // toggle_group_default_selected starts checked, -1 checks none (INP-12, INP-35).
+  initRadioToggles() {
+    walk(this.tree, (node) => {
+      if (node.radioInit || !node.bag) return;
+      const members = this.radioGroup(node);
+      if (!members) return;
+      node.radioInit = true;
+      const forced = node.props.toggle_group_forced_index;
+      const index = Number.isInteger(forced) && forced >= 0 ? forced : members.indexOf(node);
+      const selected = node.props.toggle_group_default_selected ?? 0;
+      node.bag.set('#toggle_state', fromJson(index === selected));
+    });
   }
 
   // ---------- collections ----------
@@ -591,6 +615,11 @@ export class Session {
     if (!btn) return { kind: 'none', msg: '버튼이 아닌 곳' };
     if (btn.props.type === 'toggle') {
       if (!btn.props.toggle_on_button || !btn.props.toggle_off_button) return { kind: 'toggle', msg: 'toggle_on_button/toggle_off_button이 없어 그려지기만 하고 눌리지 않는다 [INP-11]' };
+      const group = this.radioGroup(btn);
+      if (group) {
+        for (const m of group) m.bag?.set('#toggle_state', fromJson(m === btn));
+        return { kind: 'toggle', msg: `라디오 ${btn.props.toggle_name}: ${btn.name}만 켜진다 (토글 ${group.length}개) [INP-35]` };
+      }
       const cur = btn.bag.get('#toggle_state');
       btn.bag.set('#toggle_state', fromJson(!(cur && truthy(cur))));
       return { kind: 'toggle', msg: `토글 ${btn.name} → ${!(cur && truthy(cur))}` };
