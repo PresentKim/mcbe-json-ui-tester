@@ -206,6 +206,38 @@ test('scroll cells with a label on its background layer, scroll areas over butto
   assert.deepEqual(issues.map((i) => [i.node.parent.name, /LAY-55|LAY-57|COL-49/.exec(i.msg)[0]]), [['grid_item0', 'LAY-55'], ['r', 'LAY-57'], ['r', 'COL-49']]);
 });
 
+test('string divided by a number, * 1 on a string and an expression collection binding are reported (EXP-49, EXP-16, BND-37)', () => {
+  const coll = { binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: "('%.2s' * #form_button_text)", binding_name_override: '#text' };
+  const { byName } = run({ r: { type: 'stack_panel', collection_name: 'form_buttons', controls: [
+    { div: label({ bindings: [view("('' + (#s / 100))")] }) },
+    { num: label({ bindings: [view("('n' + ((#s - 0) / 100))")] }) },
+    { mul: label({ bindings: [view("('' + (#s * 1))")] }) },
+    { col: { type: 'panel', collection_index: 0, controls: [{ t: label({ bindings: [coll] }) }] } },
+  ] } }, { '#s': '350' }, { measured: true }, {}, { form_buttons: [{ '#form_button_text': 'abc' }] });
+  const rules = (n) => byName[n].bindDiags?.map((d) => /\[(EXP-49|EXP-16|BND-37)\]/.exec(d.msg)?.[1]).filter(Boolean) ?? [];
+  assert.deepEqual([rules('div'), rules('num'), rules('mul'), rules('t')], [['EXP-49'], [], ['EXP-16'], ['BND-37']]);
+  assert.equal(byName.num.eff.text, 'n3');
+});
+
+test('a fixed grid splits its width into equal cells and wraps templates wider than a cell (LAY-41)', () => {
+  const grid = (tmpl) => ({ type: 'grid', grid_dimensions: [5, 1], grid_item_template: tmpl, size: [100, 14] });
+  const { tree, byName } = run({
+    small: { type: 'panel', size: [12, 14] }, full: { type: 'panel', size: ['100%', '100%'] },
+    r: { type: 'panel', controls: [{ g: grid('n.small') }, { h: grid('n.full') }] },
+  });
+  layoutTree(tree, { w: 200, h: 200 });
+  const xs = (g) => byName[g].children.map((c) => [c.rect.x - byName[g].rect.x, c.rect.y - byName[g].rect.y]);
+  assert.deepEqual(xs('g'), [[0, 0], [20, 0], [40, 0], [60, 0], [80, 0]]);
+  assert.deepEqual(xs('h').map(([x]) => x), [0, 0, 0, 0, 0]);
+});
+
+test('modifications on variables are skipped in measured mode (MOD-03)', () => {
+  const files = (mods) => ({ name: 'p', files: { 'ui/_ui_defs.json': JSON.stringify({ ui_defs: ['ui/n.json'] }), 'ui/n.json': JSON.stringify({ namespace: 'n', r: { type: 'panel', variables: [{ requires: '(true)', $a: 1 }], modifications: mods } }) } });
+  const mods = [{ array_name: 'variables', operation: 'insert_back', value: [{ requires: '(true)', $b: 2 }] }];
+  const count = (measured) => buildCatalog([files(mods)], { measured }).defs.get('n.r').props.variables.length;
+  assert.deepEqual([count(true), count(false)], [1, 2]);
+});
+
 test('collection_index reads only under a collection stack and never on a label (COL-02, COL-38, COL-50)', () => {
   const cell = (i, type = 'panel') => ({ [`c${type}${i}`]: { type, collection_index: i, size: [10, 10], controls: [{ [`t${type}${i}`]: label({ bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) }] } });
   const lab = (i) => ({ [`l${i}`]: label({ collection_index: i, bindings: [{ binding_type: 'collection', binding_collection_name: 'form_buttons', binding_name: '#form_button_text', binding_name_override: '#text' }] }) });
