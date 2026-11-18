@@ -135,12 +135,14 @@ export function applyBinary(op, a, b, opts = {}) {
           if (opts.literalNoTruncate && b.literal) return b;
           return reinterpret(str(utf8Truncate(textForStringOp(b), +m[1])));
         }
+        if (!bStr) opts.hazards?.add('EXP-16');
         return reinterpret(str(textForStringOp(b)));
       }
       if (bStr) return a;
       return arith('*', a, b);
     case '/':
       if (aStr) {
+        if (!bStr) opts.hazards?.add('EXP-49');
         const needle = textForStringOp(b);
         if (needle === '') return int(1);
         return int(a.v.split(needle).length - 1);
@@ -220,10 +222,10 @@ const PREC = { '*': 2, '/': 2, '+': 3, '-': 3, '=': 4, '<': 4, '>': 4, and: 5, o
 class ExprError extends Error {}
 
 // Evaluates an expression string. ctx: { prop(name) -> tagged|undefined, variable(name) -> tagged|undefined, opts }
-// Returns { value, error, props: Set of #names read, vars: Set of $names read }.
+// Returns { value, error, props: Set of #names read, vars: Set of $names read, hazards: Set of rule IDs hit }.
 export function evaluate(src, ctx = {}) {
-  const props = new Set(), vars = new Set();
-  const opts = ctx.opts || {};
+  const props = new Set(), vars = new Set(), hazards = new Set();
+  const opts = { ...ctx.opts, hazards };
   let toks;
   try {
     toks = tokenize(src);
@@ -278,9 +280,9 @@ export function evaluate(src, ctx = {}) {
     }
     const value = expression(99);
     if (pos !== toks.length) throw new ExprError('Invalid expression');
-    return { value: resolveHash(value), error: null, props, vars };
+    return { value: resolveHash(value), error: null, props, vars, hazards };
   } catch (e) {
-    if (e instanceof ExprError) return { value: NULL, error: e.message, props, vars };
+    if (e instanceof ExprError) return { value: NULL, error: e.message, props, vars, hazards };
     throw e;
   }
 }

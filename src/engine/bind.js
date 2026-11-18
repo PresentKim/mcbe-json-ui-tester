@@ -50,6 +50,11 @@ export class Session {
     if (!(node.bindDiags || []).some((d) => d.msg === msg)) this.diag(node, level, msg);
   }
 
+  reportHazards(node, src, r) {
+    if (r.hazards?.has('EXP-49')) this.diagOnce(node, 'error', `문자열을 숫자로 나눈다: ${src}. Windows 1.26.65 클라이언트가 이 식에서 멈췄다(모바일 1.26.63은 멈추지 않음). 나누기 전에 (#v - 0)으로 숫자로 바꾼다 [EXP-49]`);
+    if (r.hazards?.has('EXP-16')) this.diagOnce(node, 'warn', `문자열에 * 숫자를 했다: ${src}. \`* 1\`은 문자열을 숫자로 바꾸지 않는다. (#v - 0)을 쓴다 [EXP-16]`);
+  }
+
   run(host) {
     this.host = host;
     this.tick++;
@@ -414,7 +419,9 @@ export class Session {
       const cname = b.binding_collection_name;
       if (!cname) { this.diag(node, 'error', 'Must define a collection name for the binding!'); return; }
       if (name.startsWith('(')) {
+        if (this.opts.measured) this.diagOnce(node, 'warn', `컬렉션 바인딩의 binding_name에 식을 썼다: ${name}. 서버 폼 버튼 칸에서 ('%.12s' * #form_button_text)를 이렇게 쓰자 Windows 1.26.65 클라이언트가 멈췄다(어느 식 때문인지는 분리하지 않음). 컬렉션 바인딩으로 값을 받고 뒤의 view 바인딩에서 계산한다 [BND-37]`);
         const r = evaluate(name, { prop: (k) => { const v = this.collectionValue(node, cname, k); return v === undefined ? undefined : fromJson(v); }, opts: this.opts });
+        this.reportHazards(node, name, r);
         if (!r.error) this.write(node, target, r.value);
         return;
       }
@@ -425,6 +432,7 @@ export class Session {
     // global
     if (name.startsWith('(')) {
       const r = evaluate(name, { prop: (n) => this.globalValue(n), variable: this.varFn(node), opts: this.opts });
+      this.reportHazards(node, name, r);
       if (r.error) this.diag(node, 'error', `식 바인딩 실패: ${name}`);
       else this.write(node, target, r.value);
       return;
@@ -496,7 +504,10 @@ export class Session {
     };
     let r;
     if (/^#[^\s()]+$/.test(src)) r = { value: prop(src) ?? fromJson(null), error: null };
-    else r = evaluate(src, { prop, variable: this.varFn(node), opts: this.opts });
+    else {
+      r = evaluate(src, { prop, variable: this.varFn(node), opts: this.opts });
+      this.reportHazards(node, src, r);
+    }
     if (r.error) {
       const hints = lintExpression(src);
       if (!node.reportedExpr) { this.diag(node, 'error', `Invalid expression: ${src}${hints.length ? ' — ' + hints.join(' / ') : ''}`); node.reportedExpr = true; }
@@ -546,7 +557,7 @@ export class Session {
       for (const k of ['#size_binding_x', '#size_binding_y', '#size_binding_x_absolute', '#size_binding_y_absolute', '#anchored_offset_value_x', '#anchored_offset_value_y']) {
         const v = onlyBound(k) ? bag.get(k) : undefined;
         if (v && (v.k === 'int' || v.k === 'num')) eff[k] = v.v;
-        else if (v && v.k !== 'null') (node.bindDiags ||= []).push({ level: 'error', msg: `${k}에 숫자가 아닌 값 — 게임에서는 크래시 위험 [LAY-14, 5.4절]`, where: pathOf(node) });
+        else if (v && v.k !== 'null') (node.bindDiags ||= []).push({ level: 'error', msg: `${k}에 숫자가 아닌 값. 값은 숫자여야 하고 아니면 크래시가 난다는 커뮤니티 보고가 있다(실측 아님)`, where: pathOf(node) });
       }
       if (!this.opts.measured) {
         const off = bag.get('#offset');

@@ -582,7 +582,9 @@ function runExpr() {
   const src = $('exprInput').value;
   const r = evaluate(src, { prop: (n) => (n in bag ? fromJson(bag[n]) : undefined), variable: (n) => (n in vars ? fromJson(vars[n]) : undefined), opts: opts().measured ? { literalNoTruncate: true } : {} });
   out.textContent = r.error ? `Json(Null) — ${r.error}` : show(r.value);
-  for (const hint of lintExpression(src)) { const s = document.createElement('span'); s.className = 'hint'; s.textContent = '· ' + hint; out.append(s); }
+  const hints = lintExpression(src);
+  if (r.hazards.has('EXP-49')) hints.push('문자열을 숫자로 나누면 Windows 1.26.65 클라이언트가 멈춘다. 먼저 `(#v - 0)` [EXP-49]');
+  for (const hint of hints) { const s = document.createElement('span'); s.className = 'hint'; s.textContent = '· ' + hint; out.append(s); }
 }
 for (const ex of EXAMPLES) {
   const b = document.createElement('button');
