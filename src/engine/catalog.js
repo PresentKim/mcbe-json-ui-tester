@@ -103,7 +103,7 @@ export function buildCatalog(packs, opts = {}) {
             // may be completed by a later same-path redefinition; checked in resolve
           }
           defs.set(id, { id, ns: defNs, name, base: base ? qualify(base, defNs) : null, props: own, path, pack: pack.name, vanilla: !!pack.vanilla, history: [where] });
-          if (mods) applyModifications(defs.get(id), mods, where, diag);
+          if (mods) applyModifications(defs.get(id), mods, where, diag, opts);
           continue;
         }
         if (existing.path !== path) {
@@ -130,7 +130,7 @@ export function buildCatalog(packs, opts = {}) {
         existing.history.push(where);
         existing.pack = pack.name;
         existing.vanilla = existing.vanilla && !!pack.vanilla;
-        if (mods) applyModifications(existing, mods, where, diag);
+        if (mods) applyModifications(existing, mods, where, diag, opts);
       }
     }
   }
@@ -179,7 +179,7 @@ function selectIndex(arr, original, sel, isControls) {
   return -1;
 }
 
-export function applyModifications(def, mods, where, diag) {
+export function applyModifications(def, mods, where, diag, opts = {}) {
   if (!Array.isArray(mods)) { diag('error', `${def.id}: modifications는 배열이어야 한다`, where); return; }
   const props = def.props;
   const originals = new Map();
@@ -190,7 +190,10 @@ export function applyModifications(def, mods, where, diag) {
     if (!arrayName) { diag('error', `${def.id}: array_name이 없다`, where); continue; }
     const op = m.operation;
     if (!MOD_OPS.includes(op)) { diag('error', `${def.id}: 알 수 없는 operation '${op}' (엔진 연산은 11개) [MOD-23]`, where); continue; }
-    if (arrayName === 'variables') diag('warn', `${def.id}: variables 대상 modifications는 게임에서 무시됐다 [MOD-03, C-64]`, where);
+    if (arrayName === 'variables') {
+      diag('warn', `${def.id}: variables 대상 modifications는 게임에서 무시됐다 [MOD-03, C-64]`, where);
+      if (opts.measured) continue;
+    }
     if (!Array.isArray(props[arrayName])) {
       if (props[arrayName] !== undefined && !Array.isArray(props[arrayName])) { diag('error', `${def.id}.${arrayName}: 배열이 아니다`, where); continue; }
       // the definition does not declare the array itself: a new array masks the inherited one (MOD-04).

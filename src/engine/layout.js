@@ -173,8 +173,14 @@ export function layoutTree(root, screen, opts = {}) {
       const dims = node.gridDims || node.props.grid_dimensions || null;
       let cellW = 0, cellH = 0;
       for (const c of kids) { const sz = measureNode(c, w, h, sibMax); cellW = Math.max(cellW, sz[0]); cellH = Math.max(cellH, sz[1]); }
-      let cols = dims ? dims[0] : Math.max(1, Math.floor(w / (cellW || 1)));
-      if (node.props.grid_rescaling_type === 'horizontal') cols = Math.max(1, Math.floor(w / (cellW || 1))); // LAY-30
+      const fitCols = Math.max(1, Math.floor(w / (cellW || 1)));
+      let cols = dims ? dims[0] : fitCols;
+      if (node.props.grid_rescaling_type === 'horizontal') cols = fitCols; // LAY-30
+      else if (dims && w > 0) {
+        // fixed dimensions split the grid width into equal cells, and a template wider than a cell wraps to its own row (LAY-41)
+        cols = Math.min(dims[0], fitCols);
+        cellW = Math.max(cellW, w / dims[0]);
+      }
       const vertical = node.props.grid_fill_direction === 'vertical';
       const rowsFixed = dims ? dims[1] : Math.ceil(kids.length / cols);
       kids.forEach((c, i) => {
@@ -365,7 +371,9 @@ export function findLayoutIssues(nodes) {
     if (taken.length) out.push({ node: v, level: 'warn', msg: `이 스크롤 영역이 바깥 버튼 ${taken.length}개(${taken.slice(0, 3).map((b) => b.name).join(', ')}) 위를 덮는다. 휴대폰에서는 내용이 비어 있어도 그 영역의 터치를 가져가 버튼이 눌리지 않았다 [LAY-57]` });
   }
   for (const g of shown) {
-    if (g.props.type === 'grid' && g.rect.h > 30000) out.push({ node: g, level: 'warn', msg: `grid 높이가 ${Math.round(g.rect.h)}px다. 게임에서는 약 30000px(2열 2000칸)까지 맞았고 45000px(3000칸)부터 칸들이 맨 위 약 200px 안에 겹쳐 그려졌다 [COL-49]` });
+    if (g.props.type !== 'grid') continue;
+    const cells = g.children.filter((c) => c.fromFactory).length;
+    if (g.rect.h > 30000 || cells >= 3000) out.push({ node: g, level: 'warn', msg: `grid 높이가 ${Math.round(g.rect.h)}px, 칸이 ${cells}개다. 게임에서는 약 30000px(2열 2000칸)까지 맞았고 45000px(3000칸)부터 칸들이 맨 위 약 200px 안에 겹쳐 그려졌다. 원인이 칸 수인지 높이인지는 모른다 [COL-49]` });
   }
   return out;
 }
