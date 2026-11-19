@@ -2,7 +2,7 @@
 // Headless run of the tester: load packs, build a screen, bind mock host data, lay out, print findings.
 //   node cli.mjs --vanilla <resource_pack dir> [--pack <dir>]... [--sample] --root <ns.name>
 //                [--host server_form|hud|chest|none] [--title T] [--body B] [--buttons "a;b;c"]
-//                [--slots slots.json] [--hud-title T] [--actionbar A] [--cn] [--json]
+//                [--slots slots.json] [--hud-title T] [--actionbar A] [--language ko_KR|en_US] [--cn] [--json]
 //   slots.json (chest host): [{ "name": "...", "id_aux": 65536, "count": 1, "durability": 0 }, ...] by slot index
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,6 +12,7 @@ import { Session, walk } from './src/engine/bind.js';
 import { layoutTree, findOcclusions, findRendererIssues, findLayoutIssues } from './src/engine/layout.js';
 import { serverFormHost, hudHost, chestHost, PLATFORMS } from './src/engine/host.js';
 import { SAMPLE_PACK } from './samples/sample-pack.js';
+import { createMeasure } from './src/engine/font.js';
 
 const args = process.argv.slice(2);
 const opt = (name, dflt) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : dflt; };
@@ -56,7 +57,9 @@ if (!cat.defs.has(root)) { console.error(`UI control reference not found: '${roo
 const { tree, diags } = buildTree(cat, root, { platform: PLATFORMS[opt('platform', 'desktop')], hostVars: host.hostVars });
 const s = new Session(cat, tree, { measured });
 s.run(host);
-const laid = layoutTree(tree, { w: Number(opt('w', 427)), h: Number(opt('h', 240)) });
+const fontMetrics = JSON.parse(fs.readFileSync(new URL('./data/font-metrics.json', import.meta.url), 'utf8'));
+const measure = createMeasure(fontMetrics, { unicodeAscii: opt('language', 'ko_KR') !== 'en_US' });
+const laid = layoutTree(tree, { w: Number(opt('w', 427)), h: Number(opt('h', 240)) }, { measure });
 
 const findings = [...cat.diags.filter((d) => d.level !== 'info'), ...diags];
 let count = 0;
