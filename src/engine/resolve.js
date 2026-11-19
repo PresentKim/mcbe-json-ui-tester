@@ -3,6 +3,7 @@
 
 import { evaluate, fromJson, toJson, truthy } from './expr.js';
 import { splitKey, qualify } from './catalog.js';
+import { CONTROL_TYPES, RENDERERS } from './controls.js';
 
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 
@@ -238,11 +239,12 @@ export function instantiate(cat, ref, name, inline, parentScope, parent, env, pe
   }
   node.props = resolved;
   node.type = resolved.type ?? null;
-  if (!node.type && node.chain.length === 0 && !inline?.type) {
-    ndiag('error', 'Type not specified (or @-base not found)');
-  } else if (!node.type) {
-    ndiag('error', 'Type not specified (or @-base not found)');
+  if (!CONTROL_TYPES.includes(node.type)) {
+    ndiag('error', node.type ? `Type '${node.type}' not recognized for control: ${name}` : `Type not specified (or @-base not found) for control: ${name}`);
+    node.ignored = true;
+    return node;
   }
+  if (node.type === 'custom' && !RENDERERS.includes(resolved.renderer)) ndiag('error', `Unrecognized renderer: '${resolved.renderer ?? ''}'`);
 
   // children
   let controls = props.controls;
