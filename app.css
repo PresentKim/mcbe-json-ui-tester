@@ -58,15 +58,9 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
 .stagebar input { width: 320px; max-width: 50vw; }
 .stagewrap { flex: 1; overflow: auto; display: flex; align-items: flex-start; padding: 16px; }
 .stage { flex: none; margin: 0 auto; position: relative; background: var(--stage) repeating-conic-gradient(#ffffff08 0 25%, transparent 0 50%) 0 0 / 16px 16px; box-shadow: 0 0 0 1px var(--line); overflow: hidden; image-rendering: pixelated; }
+.stage > canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
 .ctl { position: absolute; pointer-events: none; }
-.ctl.image { background-repeat: no-repeat; }
-.ctl.image.missing { background: repeating-linear-gradient(45deg, #ff00ff55 0 4px, #00000055 4px 8px); }
-.ctl.label { white-space: pre; overflow: visible; font-family: "Minecraft", "Malgun Gothic", ui-monospace, Consolas, monospace; color: #fff; }
-.ctl.label .line { white-space: nowrap; overflow: visible; }
-.ctl.label .glyph { display: inline-block; overflow: visible; text-align: left; }
-.ctl.label.lang-key { text-decoration: underline dotted #ffffff88; }
-.item-icon { position: absolute; background-size: contain; background-repeat: no-repeat; background-position: top center; image-rendering: pixelated; }
-.cube-face { position: absolute; left: 0; top: 0; width: 16px; height: 16px; transform-origin: 0 0; background-size: 16px auto; background-repeat: no-repeat; image-rendering: pixelated; }
+.ctl.missing { background: repeating-linear-gradient(45deg, #ff00ff55 0 4px, #00000055 4px 8px); }
 .ctl.renderer { outline: 1px dashed #7fd1ff; color: #7fd1ff; font: 10px ui-monospace, monospace; display: grid; place-items: center; overflow: hidden; background: #7fd1ff14; }
 .ctl.outline { outline: 1px solid #ffffff2a; }
 .ctl.hidden-ctl { opacity: .25; outline: 1px dashed #ff8a8a88; }
