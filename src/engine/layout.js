@@ -229,7 +229,9 @@ export function layoutTree(root, screen, opts = {}) {
     return { sum, max, extent };
   }
 
-  function position(node, x, y, layer, clip) {
+  function position(node, x, y, layer, clip, parentAllowsClipping = true) {
+    const allowsClipping = typeof node.props.allow_clipping === 'boolean' ? node.props.allow_clipping : parentAllowsClipping;
+    if (!allowsClipping) clip = null;
     const [w, h] = node.size || [0, 0];
     if (node.props.type === 'label') {
       // the lines the label draws, broken at its final width with the same measure as its size
@@ -246,10 +248,7 @@ export function layoutTree(root, screen, opts = {}) {
       const r = { x, y, w, h };
       childClip = clip ? intersect(clip, r) : r;
     }
-    for (const k of node.kidsLayout || []) {
-      const cc = k.c.props.allow_clipping === false ? null : childClip;
-      position(k.c, x + k.x, y + k.y, lay, cc);
-    }
+    for (const k of node.kidsLayout || []) position(k.c, x + k.x, y + k.y, lay, childClip, allowsClipping);
   }
 
   measureNode(root, screen.w, screen.h, [0, 0]);
