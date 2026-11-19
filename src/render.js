@@ -1,6 +1,7 @@
 // DOM renderer for a laid-out control tree.
 import { walk } from './engine/bind.js';
 import { modelFaces, modelBounds, sphereFit } from './engine/geometry.js';
+import { rendererOf } from './engine/controls.js';
 
 const COLOR_CODES = {
   0: '#000000', 1: '#0000AA', 2: '#00AA00', 3: '#00AAAA', 4: '#AA0000', 5: '#AA00AA', 6: '#FFAA00', 7: '#AAAAAA',
@@ -59,7 +60,7 @@ export function renderTree(stage, root, { zoom, textures, items: itemIcons, outl
     if (!visible && !showHidden) continue;
     const t = n.props.type;
     // engine renderers other than item icons are only placeholders: show them with the outlines
-    const isItem = t === 'custom' && /item_renderer$/.test(n.props.renderer || '');
+    const isItem = rendererOf(n) === 'inventory_item_renderer';
     const drawable = t === 'image' || t === 'label' || isItem || (t === 'custom' && outlines) || n.props.debug;
     const showBox = outlines || n.uid === selectedUid;
     if (!drawable && !showBox) continue;
@@ -76,7 +77,7 @@ export function renderTree(stage, root, { zoom, textures, items: itemIcons, outl
     else if (alpha < 1) el.style.opacity = String(Math.max(0, alpha));
     if (t === 'image') drawImage(el, n, textures, zoom);
     else if (t === 'label') drawLabel(el, n, zoom);
-    else if (t === 'custom' && /item_renderer$/.test(n.props.renderer || '') && itemIcons && drawItem(el, n, itemIcons, textures, zoom)) {
+    else if (isItem && itemIcons && drawItem(el, n, itemIcons, textures, zoom)) {
       /* drawn as the item's icon */
     } else if (t === 'custom' && !outlines) {
       continue;
@@ -149,8 +150,9 @@ function drawImage(el, n, textures, zoom) {
   } else {
     el.style.backgroundImage = `url("${info.url}")`;
     const tiled = n.props.tiled;
-    if (tiled === true || tiled === 'x' || tiled === 'y') {
-      el.style.backgroundRepeat = tiled === true ? 'repeat' : tiled === 'x' ? 'repeat-x' : 'repeat-y';
+    const repeat = { x: 'repeat-x', y: 'repeat-y', xy: 'repeat', yx: 'repeat' }[tiled] ?? (tiled === true ? 'repeat' : null);
+    if (repeat) {
+      el.style.backgroundRepeat = repeat;
       el.style.backgroundSize = info.w ? `${info.w * zoom}px ${info.h * zoom}px` : 'auto';
     } else if (n.props.keep_ratio !== false && info.w) {
       // keep_ratio (on by default) fits the texture inside, centred; with fill it covers and is cut
