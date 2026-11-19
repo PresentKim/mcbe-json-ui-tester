@@ -2,29 +2,50 @@
 // A parsed size is { kind: 'fill' } | { kind: 'default' } | { kind: 'terms', terms: [{ v, unit }] }
 // with unit one of px, %, %c, %cm, %sm, %x, %y.
 
+const SEPARATORS = new Set(['%', 'm', 'x', 'y', 'c', 's', '+', '-']);
+const PERCENT_SUFFIX = [[['c', 'm'], '%cm'], [['c'], '%c'], [['s', 'm'], '%sm'], [['x'], '%x'], [['y'], '%y']];
+
+function sizeTokens(s) {
+  const out = [];
+  let word = '';
+  const flush = () => { if (word !== '') { out.push({ num: word }); word = ''; } };
+  for (let i = 0; i < s.length; i++) {
+    if (s.startsWith('px', i)) { flush(); out.push({ sep: 'px' }); i++; continue; }
+    if (SEPARATORS.has(s[i])) { flush(); out.push({ sep: s[i] }); continue; }
+    word += s[i];
+  }
+  flush();
+  return out;
+}
+
+const readFloat = (w) => {
+  const m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)/.exec(w);
+  return m ? Math.fround(parseFloat(m[1])) : 0;
+};
+
 export function parseSize(x) {
   if (x === 'fill') return { kind: 'fill' };
-  if (x === 'default' || x === null || x === undefined || typeof x === 'boolean') return { kind: 'default' };
+  if (x === 'default') return { kind: 'default' };
   if (typeof x === 'number') return { kind: 'terms', terms: [{ v: x, unit: 'px' }] };
   if (typeof x !== 'string') return { kind: 'default' };
-  const s = x.toLowerCase();
+  const toks = sizeTokens(x.toLowerCase());
   const terms = [];
-  let sign = 1;
-  const re = /\s*([+-])|\s*(\d*\.?\d+)\s*(?:[cmsxy]+(?=%))?(px|%(cm|sm|c|x|y)?)?|\s*([a-z%]+)/gy;
-  let m;
-  re.lastIndex = 0;
-  while (re.lastIndex < s.length && (m = re.exec(s))) {
-    if (m[0] === '') break;
-    if (m[1]) { sign = m[1] === '-' ? -1 : 1; continue; }
-    if (m[2] !== undefined) {
-      const unit = m[3] ? (m[3] === 'px' ? 'px' : '%' + (m[4] || '')) : null;
-      if (unit) terms.push({ v: sign * parseFloat(m[2]), unit }); // unitless numbers are dropped
-      continue;
+  let last = 0, neg = false, dangling = false;
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t.num !== undefined) { last = readFloat(t.num); dangling = true; continue; }
+    if (t.sep === '-') { neg = true; continue; }
+    if (t.sep === '+') { neg = false; continue; }
+    if (t.sep === 'px') { terms.push({ v: neg ? -last : last, unit: 'px' }); dangling = false; continue; }
+    if (t.sep !== '%') continue;
+    let unit = '%';
+    for (const [seq, u] of PERCENT_SUFFIX) {
+      if (seq.every((c, k) => toks[i + 1 + k]?.sep === c)) { unit = u; i += seq.length; break; }
     }
-    // a bare '%' counts as 0%; other words are ignored ("Fill", "DEFAULT" become 0)
-    if (m[5] === '%') terms.push({ v: 0, unit: '%' });
+    terms.push({ v: neg ? -last : last, unit });
+    dangling = false;
   }
-  return { kind: 'terms', terms };
+  return { kind: 'terms', terms, dangling };
 }
 
 // Resolves terms to pixels. env: { parent, self: {w,h}, axis: 'w'|'h', childSum, childMax, siblingMax }
