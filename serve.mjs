@@ -22,7 +22,7 @@ function listFiles(root) {
       else out.push(r);
     }
   };
-  for (const sub of ['ui', 'textures/ui', 'textures/gui', 'textures/items', 'textures/blocks']) {
+  for (const sub of ['ui', 'textures/ui', 'textures/gui', 'textures/items', 'textures/blocks', 'texts']) {
     const d = path.join(root, sub);
     if (fs.existsSync(d)) walk(d, sub);
   }
@@ -42,7 +42,7 @@ function listPack(dir) {
       else out.push(r);
     }
   };
-  for (const sub of ['ui', 'textures', 'models']) if (fs.existsSync(path.join(dir, sub))) walk(path.join(dir, sub), sub);
+  for (const sub of ['ui', 'textures', 'models', 'texts']) if (fs.existsSync(path.join(dir, sub))) walk(path.join(dir, sub), sub);
   return out;
 }
 

@@ -4,6 +4,7 @@ import { buildTree, pathOf } from './engine/resolve.js';
 import { Session, walk } from './engine/bind.js';
 import { layoutTree, findOcclusions, findRendererIssues, findLayoutIssues } from './engine/layout.js';
 import { createMeasure } from './engine/font.js';
+import { parseLang } from './engine/lang.js';
 import { parseGeometryFiles } from './engine/geometry.js';
 import { evaluate, show, fromJson, lintExpression } from './engine/expr.js';
 import { serverFormHost, hudHost, chestHost, mergeHost, PLATFORMS, SCREENS } from './engine/host.js';
@@ -44,8 +45,32 @@ function packFromEntries(name, entries, vanilla) {
     if (e.rel.startsWith('ui/') && UI_EXT.test(e.rel) && e.text !== undefined) pack.files[e.rel] = e.text;
     else if (e.rel.startsWith('textures/')) pack.textures.set(e.rel, e);
     else if (e.rel.startsWith('models/') && e.rel.endsWith('.json') && e.text !== undefined) pack.models[e.rel] = e.text;
+    else if (LANG_FILE.test(e.rel)) (pack.langs ||= {})[e.rel] = e;
   }
   return pack;
+}
+
+const LANG_FILE = /^texts\/[A-Za-z_]+\.lang$/;
+const langCache = new Map();
+
+async function langText(pack, rel) {
+  const e = pack.langs?.[rel];
+  const url = e?.url ?? (pack.remote ? pack.remote + rel : null);
+  if (e?.text !== undefined) return e.text;
+  if (e?.blob) return e.blob.text();
+  if (!url) return null;
+  if (!langCache.has(url)) langCache.set(url, fetch(url).then((r) => (r.ok ? r.text() : null)).catch(() => null));
+  return langCache.get(url);
+}
+
+async function loadLang() {
+  const rel = `texts/${$('language').value}.lang`;
+  const lang = new Map();
+  for (const pack of state.packs) {
+    const text = await langText(pack, rel);
+    if (text) parseLang(text, lang);
+  }
+  state.lang = lang.size ? lang : null;
 }
 
 async function loadFolder(fileList, vanilla) {
@@ -53,13 +78,14 @@ async function loadFolder(fileList, vanilla) {
   let packName = null;
   for (const f of fileList) {
     const p = f.webkitRelativePath || f.name;
-    const m = p.match(/(?:^|\/)((?:ui|textures|models)\/.+)$/);
+    const m = p.match(/(?:^|\/)((?:ui|textures|models|texts)\/.+)$/);
     if (!m) continue;
     packName = packName || p.split('/')[0];
     const rel = m[1];
     if (rel.startsWith('ui/') && UI_EXT.test(rel)) entries.push({ rel, text: await f.text() });
     else if (rel.startsWith('textures/') && /\.(png|jpe?g)$/i.test(rel)) entries.push({ rel, blob: f });
     else if ((rel.startsWith('textures/') || rel.startsWith('models/')) && rel.endsWith('.json')) entries.push({ rel, text: await f.text() });
+    else if (LANG_FILE.test(rel)) entries.push({ rel, blob: f });
   }
   if (!entries.length) { toast('ui/ 또는 textures/ 폴더가 없다. 리소스팩 루트 폴더를 고른다.'); return; }
   const pack = packFromEntries(vanilla ? `vanilla (${packName})` : packName, entries, vanilla);
@@ -74,7 +100,7 @@ async function loadVanillaFromServer() {
     const entries = [];
     for (const rel of idx.files) {
       if (idx.text[rel] !== undefined) entries.push({ rel, text: idx.text[rel] });
-      else if (/\.(png|jpe?g)$/i.test(rel)) entries.push({ rel, url: `./vanilla/${rel}` });
+      else if (/\.(png|jpe?g)$/i.test(rel) || LANG_FILE.test(rel)) entries.push({ rel, url: `./vanilla/${rel}` });
     }
     const pack = packFromEntries('vanilla 1.26.50.4 (bedrock-samples)', entries, true);
     state.packs = [pack, ...state.packs.filter((p) => !p.vanilla)];
@@ -141,6 +167,7 @@ function afterPacksChanged() {
   renderPackList();
   renderFileSelect();
   rebuild();
+  loadLang().then(rebuild);
 }
 
 function renderPackList() {
@@ -250,6 +277,7 @@ function setFont() {
 }
 fetch('./data/font-metrics.json').then((r) => (r.ok ? r.json() : null)).then((m) => { fontMetrics = m; setFont(); }).catch(() => {});
 $('language').addEventListener('change', setFont);
+$('language').addEventListener('change', () => loadLang().then(rebuild));
 
 // ---------- item icons ----------
 let itemAtlas = null;
@@ -340,7 +368,7 @@ function readHost() {
 // ---------- build / run ----------
 function screenSize() { const [w, h] = $('screenSize').value.split('x').map(Number); return { w, h }; }
 window.__tester = state;
-const opts = () => ({ measured: $('mode').value === 'measured' });
+const opts = () => ({ measured: $('mode').value === 'measured', lang: state.lang });
 
 function rebuild() {
   state.textureInfo.clear();

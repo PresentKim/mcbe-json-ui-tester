@@ -13,6 +13,7 @@ import { layoutTree, findOcclusions, findRendererIssues, findLayoutIssues } from
 import { serverFormHost, hudHost, chestHost, PLATFORMS } from './src/engine/host.js';
 import { SAMPLE_PACK } from './samples/sample-pack.js';
 import { createMeasure } from './src/engine/font.js';
+import { parseLang } from './src/engine/lang.js';
 
 const args = process.argv.slice(2);
 const opt = (name, dflt) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : dflt; };
@@ -55,10 +56,16 @@ if (kind === 'chest') host = chestHost({ title: opt('title', 'Chest'), slots: op
 const root = opt('root');
 if (!cat.defs.has(root)) { console.error(`UI control reference not found: '${root}'`); process.exit(2); }
 const { tree, diags } = buildTree(cat, root, { platform: PLATFORMS[opt('platform', 'desktop')], hostVars: host.hostVars });
-const s = new Session(cat, tree, { measured });
+const language = opt('language', 'ko_KR');
+const lang = new Map();
+for (const dir of [opt('vanilla'), ...all('pack')].filter(Boolean)) {
+  const file = path.join(dir, 'texts', `${language}.lang`);
+  if (fs.existsSync(file)) parseLang(fs.readFileSync(file, 'utf8'), lang);
+}
+const s = new Session(cat, tree, { measured, lang: lang.size ? lang : null });
 s.run(host);
 const fontMetrics = JSON.parse(fs.readFileSync(new URL('./data/font-metrics.json', import.meta.url), 'utf8'));
-const measure = createMeasure(fontMetrics, { unicodeAscii: opt('language', 'ko_KR') !== 'en_US' });
+const measure = createMeasure(fontMetrics, { unicodeAscii: language !== 'en_US' });
 const laid = layoutTree(tree, { w: Number(opt('w', 427)), h: Number(opt('h', 240)) }, { measure });
 
 const findings = [...cat.diags.filter((d) => d.level !== 'info'), ...diags];

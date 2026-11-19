@@ -4,6 +4,7 @@
 import { evaluate, fromJson, toJson, truthy, lintExpression, tokenize } from './expr.js';
 import { instantiate, Scope, scopeVar, pathOf } from './resolve.js';
 import { splitKey, qualify } from './catalog.js';
+import { localize } from './lang.js';
 
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 
@@ -592,6 +593,10 @@ export class Session {
       if (this.opts.measured && node.boundKeys?.has('#alpha')) eff.alpha = eff.alpha >= 1 ? 1 : eff.alpha <= 0 ? 0 : eff.alpha; // C-45 note in inspector
       eff.clip_ratio = pick('#clip_ratio', 'clip_ratio', 'num') ?? 0;
       eff.text = pick('#text', 'text', 'text');
+      if (p.type === 'label' && p.localize !== false && this.opts.lang) {
+        eff.sourceText = eff.text;
+        eff.text = localize(eff.text, this.opts.lang);
+      }
       eff.texture = pick('#texture', 'texture', 'str');
       eff.color = pick('#color', 'color', 'json');
       eff.toggle_state = pick('#toggle_state', null, 'bool');
