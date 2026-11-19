@@ -1,7 +1,7 @@
 // Instantiates a control tree from the catalog: inheritance, $variables, variables/requires, ignored.
 // Rules: FILE-06..19, FILE-33..38, FILE-43, CN-14..CN-25.
 
-import { evaluate, fromJson, toJson, truthy } from './expr.js';
+import { evaluate, fromJson, toJson, truthy, NULL } from './expr.js';
 import { splitKey, qualify } from './catalog.js';
 import { CONTROL_TYPES, RENDERERS } from './controls.js';
 
@@ -119,33 +119,32 @@ export function substitute(value, scope, ctx) {
   return value;
 }
 
+function forceEvaluate(raw, scope) {
+  let v = raw, note = null;
+  for (let depth = 0; depth < 8 && typeof v === 'string'; depth++) {
+    if (v.startsWith('$') && !v.includes(' ')) {
+      const found = scope.lookup(v);
+      if (found === undefined) { note = `미설정 ${v}는 글자로 남는다 [FILE-35]`; break; }
+      v = found;
+    } else if (v.startsWith('(')) {
+      const r = evaluate(v, { variable: scopeVar(scope) });
+      if (r.error) return { value: NULL, note, error: `식 실패: ${v}` };
+      if (r.value.k !== 'str' || !r.value.v.startsWith('(')) return { value: r.value, note };
+      v = r.value.v;
+    } else break;
+  }
+  return { value: fromJson(v ?? null), note };
+}
+
+const INVALID_IGNORED = 'An invalid value was provided for "ignored" field.';
+
 function evalGate(expr, scope) {
-  if (expr === null || expr === undefined) return { value: false };
-  if (typeof expr === 'boolean') return { value: expr };
-  if (typeof expr === 'number') {
-    if (!Number.isInteger(expr)) return { value: false, error: 'An invalid value was provided for "ignored" field.' };
-    return { value: expr !== 0 };
-  }
-  if (typeof expr !== 'string') return { value: false, error: 'An invalid value was provided for "ignored" field.' };
-  if (expr.startsWith('$') && !expr.includes(' ')) {
-    const v = scope.lookup(expr);
-    if (v === undefined) return { value: false, note: `미설정 ${expr}는 글자로 남아 생성된다 [FILE-35]` };
-    if (typeof v === 'string') {
-      if (v.startsWith('(')) return evalGate(v, scope);
-      return { value: false };
-    }
-    return evalGate(v, scope);
-  }
-  if (expr.startsWith('(')) {
-    if (expr.includes('#')) return { value: false, error: 'ignored에는 #바인딩을 쓸 수 없다 [FILE-16]' };
-    const r = evaluate(expr, { variable: scopeVar(scope) });
-    if (r.error) return { value: false, error: `식 실패: ${expr}` };
-    const v = r.value;
-    if (v.k === 'bool') return { value: v.v };
-    if (v.k === 'int') return { value: v.v !== 0 };
-    return { value: false };
-  }
-  return { value: false };
+  const { value: v, note, error } = forceEvaluate(expr, scope);
+  if (error) return { value: false, note, error };
+  if (v.k === 'bool') return { value: v.v, note };
+  if (v.k === 'int') return { value: v.v !== 0, note };
+  if (v.k === 'null' || (v.k === 'str' && v.v.length > 1 && v.v.startsWith('#'))) return { value: false, note };
+  return { value: false, note, error: INVALID_IGNORED };
 }
 
 let nextId = 1;
@@ -208,19 +207,9 @@ export function instantiate(cat, ref, name, inline, parentScope, parent, env, pe
   node.appliedVariables = [];
   for (const b of blocks) {
     if (!isObj(b)) continue;
-    let ok = true;
-    if ('requires' in b) {
-      const req = b.requires;
-      if (typeof req === 'string' && req.includes('#')) ok = false;
-      else if (typeof req === 'string' && req.startsWith('(')) {
-        const r = evaluate(req, { variable: scopeVar(frame) });
-        ok = !r.error && truthy(r.value);
-      } else if (typeof req === 'string' && req.startsWith('$')) {
-        const v = frame.lookup(req);
-        ok = v !== undefined && truthy(fromJson(v));
-      } else ok = truthy(fromJson(req));
-    }
-    if (!ok) continue;
+    const req = forceEvaluate(b.requires ?? null, frame);
+    if (req.note) node.diags.push({ level: 'info', msg: `requires: ${req.note}` });
+    if (req.error || !truthy(req.value)) continue;
     node.appliedVariables.push(b.requires ?? '(always)');
     for (const [k, v] of Object.entries(b)) if (k.startsWith('$')) frame.declare(k, v);
   }

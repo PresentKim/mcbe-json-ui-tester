@@ -1,11 +1,23 @@
 // Binding stage: property bags, factories and collections, global/collection/view bindings,
 // binding_condition over ticks. Rules: BND-*, COL-*, CN-31..CN-46, NB-04..NB-09.
 
-import { evaluate, fromJson, toJson, truthy, lintExpression } from './expr.js';
+import { evaluate, fromJson, toJson, truthy, lintExpression, tokenize } from './expr.js';
 import { instantiate, Scope, scopeVar, pathOf } from './resolve.js';
 import { splitKey, qualify } from './catalog.js';
 
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+
+function expressionProps(expr, variable) {
+  const names = new Set();
+  for (const t of tokenize(expr)) {
+    if (t.t === 'prop') names.add(t.v);
+    else if (t.t === 'var') {
+      const v = variable(t.v);
+      if (v?.k === 'str' && v.v.length > 1 && v.v.startsWith('#')) names.add(v.v);
+    }
+  }
+  return [...names];
+}
 const CONDITIONS = ['none', 'once', 'always', 'always_when_visible', 'visible', 'visibility_changed'];
 const TYPES = ['global', 'collection', 'collection_details', 'view', 'none'];
 const COLLECTION_TYPES = ['stack_panel', 'grid', 'collection_panel'];
@@ -412,37 +424,66 @@ export class Session {
       }
       return;
     }
-    const name = b.binding_name;
-    if (typeof name !== 'string' || name === '') { this.diag(node, 'error', 'Must define a binding name!'); return; }
-    const target = b.binding_name_override || name;
+    const src = this.bindingSource(node, b.binding_name);
+    if (!src) { this.diag(node, 'error', 'Must define a binding name!'); return; }
+    const name = src.expr ?? src.name;
+    const override = typeof b.binding_name_override === 'string' && b.binding_name_override !== '' ? b.binding_name_override : null;
+    const target = override || name;
     if (type === 'collection') {
       const cname = b.binding_collection_name;
       if (!cname) { this.diag(node, 'error', 'Must define a collection name for the binding!'); return; }
-      if (name.startsWith('(')) {
+      const read = (k) => { const v = this.collectionValue(node, cname, k); return v === undefined ? undefined : fromJson(v); };
+      if (src.expr) {
         if (this.opts.measured) this.diagOnce(node, 'warn', `컬렉션 바인딩의 binding_name에 식을 썼다: ${name}. 서버 폼 버튼 칸에서 ('%.12s' * #form_button_text)를 이렇게 쓰자 Windows 1.26.65 클라이언트가 멈췄다(어느 식 때문인지는 분리하지 않음). 컬렉션 바인딩으로 값을 받고 뒤의 view 바인딩에서 계산한다 [BND-37]`);
-        const r = evaluate(name, { prop: (k) => { const v = this.collectionValue(node, cname, k); return v === undefined ? undefined : fromJson(v); }, opts: this.opts });
-        this.reportHazards(node, name, r);
-        if (!r.error) this.write(node, target, r.value);
+        this.writeExpression(node, src, override, read);
         return;
       }
-      const raw = this.collectionValue(node, cname, name);
-      if (raw !== undefined) this.write(node, target, fromJson(raw));
+      const raw = read(name);
+      if (raw !== undefined) this.write(node, target, raw);
       return;
     }
-    // global
-    if (name.startsWith('(')) {
-      const r = evaluate(name, { prop: (n) => this.globalValue(n), variable: this.varFn(node), opts: this.opts });
-      this.reportHazards(node, name, r);
-      if (r.error) this.diag(node, 'error', `식 바인딩 실패: ${name}`);
-      else this.write(node, target, r.value);
+    if (src.expr) {
+      this.writeExpression(node, src, override, (n) => this.globalValue(n));
       return;
     }
-    if (!name.startsWith('#')) return; // a bare word makes no binding (CN-33)
     const v = this.globalValue(name);
     if (v !== undefined) this.write(node, target, v);
     else if (target === '#visible' && this.host.assumeHidden !== false) {
       // the real screen controller answers flags the mock does not know; vanilla mostly hides them
       if (this.write(node, target, fromJson(false))) node.assumedHidden = name;
+    }
+  }
+
+  bindingSource(node, raw) {
+    const variable = this.varFn(node);
+    let name = raw;
+    for (let depth = 0; depth < 8; depth++) {
+      if (typeof name !== 'string' || name === '') return null;
+      if (name.startsWith('$')) {
+        const v = variable(name);
+        if (v?.k !== 'str') return null;
+        name = v.v;
+        continue;
+      }
+      if (name.startsWith('#')) return { name };
+      if (!name.startsWith('(')) return null;
+      const names = expressionProps(name, variable);
+      if (names.length) return { expr: name, names };
+      const r = evaluate(name, { variable, opts: this.opts });
+      if (r.value.k !== 'str') return null;
+      name = r.value.v;
+    }
+    return null;
+  }
+
+  writeExpression(node, src, override, read) {
+    const r = evaluate(src.expr, { prop: read, variable: this.varFn(node), opts: this.opts });
+    this.reportHazards(node, src.expr, r);
+    if (r.error) { this.diag(node, 'error', `식 바인딩 실패: ${src.expr}`); return; }
+    if (override) { this.write(node, override, r.value); return; }
+    for (const n of src.names) {
+      const v = read(n);
+      if (v !== undefined) this.write(node, n, v);
     }
   }
 
