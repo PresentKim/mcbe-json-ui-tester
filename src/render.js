@@ -68,16 +68,13 @@ export function renderTree(stage, root, { zoom, textures, items: itemIcons, outl
     el.className = 'ctl';
     el.dataset.uid = n.uid;
     Object.assign(el.style, { left: `${x * zoom}px`, top: `${y * zoom}px`, width: `${Math.max(0, w) * zoom}px`, height: `${Math.max(0, h) * zoom}px` });
-    if (n.clip) {
-      const c = n.clip;
-      const top = Math.max(0, c.y - y), left = Math.max(0, c.x - x);
-      const right = Math.max(0, x + w - (c.x + c.w)), bottom = Math.max(0, y + h - (c.y + c.h));
-      el.style.clipPath = `inset(${top * zoom}px ${right * zoom}px ${bottom * zoom}px ${left * zoom}px)`;
-    }
+    const inset = n.clip ? clipInset(n.rect, n.clip) : [0, 0, 0, 0];
+    if (t === 'image') ratioInset(n).forEach((v, i) => { inset[i] = Math.max(inset[i], v); });
+    if (inset.some((v) => v > 0)) el.style.clipPath = `inset(${inset.map((v) => `${v * zoom}px`).join(' ')})`;
     const alpha = alphaOf(n);
     if (!visible) el.classList.add('hidden-ctl');
     else if (alpha < 1) el.style.opacity = String(Math.max(0, alpha));
-    if (t === 'image') { drawImage(el, n, textures, zoom); clipRatio(el, n); }
+    if (t === 'image') drawImage(el, n, textures, zoom);
     else if (t === 'label') drawLabel(el, n, zoom);
     else if (t === 'custom' && /item_renderer$/.test(n.props.renderer || '') && itemIcons && drawItem(el, n, itemIcons, textures, zoom)) {
       /* drawn as the item's icon */
@@ -180,12 +177,15 @@ function drawImage(el, n, textures, zoom) {
 }
 
 // clip_ratio is the part cut away, measured from the clip_direction side (ANI-03, CN-54)
-function clipRatio(el, n) {
+function ratioInset(n) {
   const ratio = n.eff?.clip_ratio ?? 0;
-  if (!(ratio > 0)) return;
-  const pct = Math.min(1, ratio) * 100;
-  const inset = { left: `0 ${pct}% 0 0`, right: `0 0 0 ${pct}%`, up: `0 0 ${pct}% 0`, down: `${pct}% 0 0 0` }[n.props.clip_direction || 'left'];
-  if (inset) el.style.clipPath = `inset(${inset})`;
+  if (!(ratio > 0)) return [0, 0, 0, 0];
+  const r = Math.min(1, ratio), { w, h } = n.rect;
+  return { left: [0, r * w, 0, 0], right: [0, 0, 0, r * w], up: [0, 0, r * h, 0], down: [r * h, 0, 0, 0] }[n.props.clip_direction || 'left'] || [0, 0, 0, 0];
+}
+
+function clipInset({ x, y, w, h }, c) {
+  return [Math.max(0, c.y - y), Math.max(0, x + w - (c.x + c.w)), Math.max(0, y + h - (c.y + c.h)), Math.max(0, c.x - x)];
 }
 
 // #item_id_aux = numeric ID × 65536 + data (ANI-06); the atlas maps the ID to its icon textures.
