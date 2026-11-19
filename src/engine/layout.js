@@ -14,13 +14,14 @@ export function defaultMeasure(text, scale = 1, maxWidth = Infinity) {
 }
 
 const ANCHORS = ['top_left', 'top_middle', 'top_right', 'left_middle', 'center', 'right_middle', 'bottom_left', 'bottom_middle', 'bottom_right'];
-function anchorFactor(a) {
-  // anchors are judged by whether the name contains left/right/top/bottom (LAY-43)
-  const s = typeof a === 'string' ? a : 'center';
-  return [s.includes('left') ? 0 : s.includes('right') ? 1 : 0.5, s.includes('top') ? 0 : s.includes('bottom') ? 1 : 0.5];
-}
+const anchorFactor = (a) => {
+  const i = ANCHORS.indexOf(a);
+  return i < 0 ? [0.5, 0.5] : [(i % 3) / 2, Math.floor(i / 3) / 2];
+};
 
-const sizePair = (v) => (Array.isArray(v) ? [v[0], v[1]] : v === undefined ? ['default', 'default'] : [v, v]);
+const sizePair = (v) => (Array.isArray(v) ? [v[0], v[1]] : ['default', 'default']);
+const usesSelf = (spec, unit) => spec.kind === 'terms' && spec.terms.some((t) => t.unit === unit);
+const SIZE_MIN = -32768, SIZE_MAX = 32767;
 
 export function layoutTree(root, screen, opts = {}) {
   const measure = opts.measure || defaultMeasure;
@@ -46,7 +47,8 @@ export function layoutTree(root, screen, opts = {}) {
     const scale = (FONT_SCALE[p.font_size] ?? 1) * (typeof p.font_scale_factor === 'number' && p.font_scale_factor > 0 ? p.font_scale_factor : 1);
     let text = null;
     if (label) text = measure(eff.text ?? '', scale);
-    for (const ax of [0, 1]) {
+    const order = usesSelf(specs[0], '%y') && !usesSelf(specs[1], '%x') ? [1, 0] : [0, 1];
+    for (const ax of order) {
       const spec = specs[ax];
       const parent = ax === 0 ? pw : ph;
       if (spec.kind === 'fill') { res[ax] = 0; continue; } // resolved by a stack parent
@@ -68,18 +70,16 @@ export function layoutTree(root, screen, opts = {}) {
     return { res, specs };
   }
 
-  function clamp(node, v, ax, pw, ph) {
+  function clamp(node, v, ax, env) {
     const p = node.props;
-    const lim = (x) => {
-      if (x === undefined) return undefined;
+    const lim = (x, dflt) => {
       const s = parseSize(sizePair(x)[ax]);
-      if (s.kind !== 'terms' || s.terms.length === 0) return undefined;
-      return resolveTerms(s, { parent: ax === 0 ? pw : ph, childSum: 0, childMax: 0, siblingMax: 0 });
+      if (s.kind !== 'terms' || s.terms.length === 0) return dflt;
+      return resolveTerms(s, env);
     };
-    const mn = lim(p.min_size), mx = lim(p.max_size);
-    if (mx !== undefined && v > mx) return mx; // max wins even when min is larger (CN-48)
-    if (mn !== undefined && v < mn) return mn;
-    return v;
+    const mn = lim(p.min_size, SIZE_MIN), mx = lim(p.max_size, SIZE_MAX);
+    const out = v > mx ? mx : Math.max(v, mn);
+    return Number.isFinite(out) ? out : 0;
   }
 
   // Lays out node inside a parent of size (pw, ph); returns [w, h].
@@ -102,19 +102,19 @@ export function layoutTree(root, screen, opts = {}) {
     const needKids = [0, 1].some((ax) => Number.isNaN(res[ax]) || usesChildren(specs[ax]));
     const kidsW = Number.isNaN(w) ? 0 : w, kidsH = Number.isNaN(h) ? 0 : h;
     const kids = layoutChildren(node, kidsW, kidsH);
+    const envOf = (ax) => ({ parent: ax === 0 ? pw : ph, childSum: kids.sum[ax], childMax: kids.max[ax], siblingMax: siblingMax?.[ax] ?? 0, selfW: res[0], selfH: res[1] });
     if (needKids) {
       for (const ax of [0, 1]) {
         const spec = specs[ax];
-        const env = { parent: ax === 0 ? pw : ph, childSum: kids.sum[ax], childMax: kids.max[ax], siblingMax: siblingMax?.[ax] ?? 0 };
         if (Number.isNaN(res[ax])) {
           if (node.props.type === 'grid') res[ax] = kids.extent[ax];
           else res[ax] = kids.sum[ax];
-        } else if (usesChildren(spec)) res[ax] = resolveTerms(spec, env);
+        } else if (usesChildren(spec)) res[ax] = resolveTerms(spec, envOf(ax));
       }
       [w, h] = res;
     }
-    w = clamp(node, w, 0, pw, ph);
-    h = clamp(node, h, 1, pw, ph);
+    w = clamp(node, w, 0, envOf(0));
+    h = clamp(node, h, 1, envOf(1));
     node.size = [w, h];
     if (needKids && (w !== kidsW || h !== kidsH)) layoutChildren(node, w, h);
     return [w, h];
@@ -157,7 +157,7 @@ export function layoutTree(root, screen, opts = {}) {
         const hidden = c.eff?.visible === false;
         const pos = [0, 0];
         pos[ax] = cur;
-        if (c.props.use_child_anchors || node.props.use_child_anchors) {
+        if (node.props.use_child_anchors) {
           const [fx, fy] = anchorFactor(c.props.anchor_from), [tx, ty] = anchorFactor(c.props.anchor_to);
           const f = [fx, fy], t = [tx, ty];
           pos[cross] = f[cross] * (cross === 0 ? w : h) - t[cross] * sz[cross];
@@ -176,7 +176,10 @@ export function layoutTree(root, screen, opts = {}) {
       const fitCols = Math.max(1, Math.floor(w / (cellW || 1)));
       let cols = dims ? dims[0] : fitCols;
       if (node.props.grid_rescaling_type === 'horizontal') cols = fitCols; // LAY-30
-      else if (dims && w > 0) {
+      else if (node.props.grid_rescaling_type === 'vertical') {
+        const rows = Math.max(1, Math.floor(h / (cellH || 1)));
+        cols = Math.max(1, Math.ceil(kids.length / rows));
+      } else if (dims && w > 0) {
         // fixed dimensions split the grid width into equal cells, and a template wider than a cell wraps to its own row (LAY-41)
         cols = Math.min(dims[0], fitCols);
         cellW = Math.max(cellW, w / dims[0]);
@@ -197,33 +200,35 @@ export function layoutTree(root, screen, opts = {}) {
     } else {
       for (const c of kids) {
         const sz = measureNode(c, w, h, sibMax);
-        const [fx, fy] = anchorFactor(c.props.anchor_from), [tx, ty] = anchorFactor(c.props.anchor_to);
+        const [fx, fy] = anchorFactor(c.props.anchor_from);
+        let [tx, ty] = anchorFactor(c.props.anchor_to);
         let ox = 0, oy = 0;
         const off = c.eff?.offsetBound || c.props.offset;
         if (off !== undefined) {
           const [a, b] = sizePair(off);
           const pa = parseSize(a), pb = parseSize(b);
-          ox = pa.kind === 'terms' ? resolveTerms(pa, { parent: w, childSum: 0, childMax: 0, siblingMax: 0 }) : 0;
-          oy = pb.kind === 'terms' ? resolveTerms(pb, { parent: h, childSum: 0, childMax: 0, siblingMax: 0 }) : 0;
+          const env = { childSum: 0, childMax: 0, siblingMax: 0, selfW: sz[0], selfH: sz[1] };
+          ox = pa.kind === 'terms' ? resolveTerms(pa, { ...env, parent: w }) : 0;
+          oy = pb.kind === 'terms' ? resolveTerms(pb, { ...env, parent: h }) : 0;
         }
         if (c.props.use_anchored_offset) {
-          // value is a fraction of the parent size, measured inward from the anchored edge (CN-39)
           const vx = c.eff?.['#anchored_offset_value_x'], vy = c.eff?.['#anchored_offset_value_y'];
-          if (vx !== undefined) ox += (fx === 1 ? -1 : 1) * vx * w;
-          if (vy !== undefined) oy += (fy === 1 ? -1 : 1) * vy * h;
+          if (vx !== undefined || vy !== undefined) {
+            [tx, ty] = [fx, fy];
+            if (vx !== undefined && fx !== 0.5) ox = (fx === 1 ? -1 : 1) * vx * w;
+            if (vy !== undefined && fy !== 0.5) oy = (fy === 1 ? -1 : 1) * vy * h;
+          }
         }
         const x = fx * w - tx * sz[0] + ox, y = fy * h - ty * sz[1] + oy;
         placed.push({ c, x, y });
         if (c.eff?.visible !== false) {
-          max[0] = Math.max(max[0], sz[0]); max[1] = Math.max(max[1], sz[1]);
-          // the children's own size, independent of where the anchor would put them in a panel
-          // whose size is not known yet, and of their offset (measured in game 2026-10-23: a
-          // [152, "100%c + 8px"] panel round a 128 px child at offset [4, 4] was 136 tall, not 140)
-          extent[0] = Math.max(extent[0], sz[0]); extent[1] = Math.max(extent[1], sz[1]);
+          for (const a of [0, 1]) {
+            max[a] = Math.max(max[a], sz[a]);
+            extent[a] = Math.max(extent[a], sz[a]);
+            sum[a] += sz[a];
+          }
         }
       }
-      // %c on a plain panel is the children's reach, not their sum
-      sum[0] = extent[0]; sum[1] = extent[1];
     }
     node.kidsLayout = placed;
     return { sum, max, extent };
@@ -231,7 +236,6 @@ export function layoutTree(root, screen, opts = {}) {
 
   function position(node, x, y, layer, clip, parentAllowsClipping = true) {
     const allowsClipping = typeof node.props.allow_clipping === 'boolean' ? node.props.allow_clipping : parentAllowsClipping;
-    if (!allowsClipping) clip = null;
     const [w, h] = node.size || [0, 0];
     if (node.props.type === 'label') {
       // the lines the label draws, broken at its final width with the same measure as its size
@@ -241,8 +245,8 @@ export function layoutTree(root, screen, opts = {}) {
       node.textLines = measure(node.eff?.text ?? '', scale, w + 0.01).lineTexts;
     }
     const rect = { x, y, w, h };
-    const lay = layer + (typeof node.props.layer === 'number' ? node.props.layer : 0); // relative to the parent (LAY-18)
-    place(node, rect, lay, clip);
+    const lay = layer + (typeof node.props.layer === 'number' ? Math.trunc(node.props.layer) : 0); // relative to the parent (LAY-18)
+    place(node, rect, lay, allowsClipping ? clip : null);
     let childClip = clip;
     if (node.props.clips_children) {
       const r = { x, y, w, h };
@@ -349,6 +353,16 @@ const isUnder = (n, anc) => { for (let p = n.parent; p; p = p.parent) if (p === 
 // Layouts that drew wrong in game although nothing is wrong in this model (FFR, measured on mobile).
 export function findLayoutIssues(nodes) {
   const out = [];
+  for (const n of nodes) {
+    for (const k of ['size', 'offset', 'min_size', 'max_size']) {
+      const v = n.props[k];
+      if (v !== undefined && v !== null && !Array.isArray(v)) out.push({ node: n, level: 'warn', msg: `${k}가 배열이 아니다(${JSON.stringify(v)}). 엔진은 expected an array를 남기고 두 축 모두 default로 읽는다` });
+    }
+    for (const k of ['anchor_from', 'anchor_to']) {
+      const v = n.props[k];
+      if (v !== undefined && !ANCHORS.includes(v)) out.push({ node: n, level: 'warn', msg: `${k} '${v}'는 엔진의 앵커 이름 9개에 없어 center로 읽힌다` });
+    }
+  }
   const shown = nodes.filter((n) => n.effVisible && n.rect && n.rect.w > 0 && n.rect.h > 0);
   const images = shown.filter((n) => n.props.type === 'image' && n.eff?.texture);
   for (const n of shown) {
