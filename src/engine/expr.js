@@ -71,21 +71,19 @@ export const utf8Length = (s) => encoder.encode(s).length;
 
 // strtol-like: optional sign and at least one digit at the start.
 const INT_PREFIX = /^\s*([+-]?\d+)/;
-// strtof for words starting with a dot (".3", "-.25").
-const DOT_FLOAT = /^\s*([+-]?\.\d+(?:[eE][+-]?\d+)?)/;
+const FLOAT_PREFIX = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[+-]?(?:inf(?:inity)?|nan))/i;
 
-// Re-reads a word the way the tokenizer would (CN-26, CN-29).
 export function classifyWord(w) {
-  const lower = w.toLowerCase();
-  if (w.length > 1 && (w[0] === "'" || w[0] === '"') && w.indexOf(w[0], 1) === w.length - 1) return str(w.slice(1, -1));
-  if (w.startsWith('#')) return str(w); // property names stay text until a group closes
+  if (w.length > 1 && (w[0] === "'" || w[0] === '"') && w[w.length - 1] === w[0]) return str(w.slice(1, -1));
+  if (w.startsWith('#')) return str(w);
   const mi = INT_PREFIX.exec(w);
   if (mi) {
     const n = parseInt(mi[1], 10);
-    return int(n > 2147483647 || n < -2147483648 ? (n | 0) : n);
+    if (n <= 2147483647 && n >= -2147483648) return int(n);
   }
-  const mf = DOT_FLOAT.exec(w);
-  if (mf) return num(parseFloat(mf[1]));
+  const mf = FLOAT_PREFIX.exec(w);
+  if (mf) return num(parseFloat(mf[1].replace(/inf(inity)?/i, 'Infinity').replace(/nan/i, 'NaN')));
+  const lower = w.toLowerCase();
   if (lower === 'true' || lower === 'yes') return bool(true);
   if (lower === 'false' || lower === 'no') return bool(false);
   return str(w);
@@ -101,7 +99,7 @@ function arith(op, a, b) {
       case '+': return int((x + y) | 0);
       case '-': return int((x - y) | 0);
       case '*': return int(Math.imul(x, y));
-      case '/': return y === 0 ? int(x) : int(Math.trunc(x / y));
+      case '/': return y === 0 ? a : int(Math.trunc(x / y));
     }
   }
   switch (op) {
@@ -147,7 +145,7 @@ export function applyBinary(op, a, b, opts = {}) {
         if (needle === '') return int(1);
         return int(a.v.split(needle).length - 1);
       }
-      if (bStr) return a;
+      if (bStr) return a.k === 'num' ? num(0) : int(0);
       return arith('/', a, b);
     case '=':
       if (aStr && bStr) return bool(a.v === b.v);
@@ -179,7 +177,7 @@ function Buffer_compare(s, t) {
 }
 
 // ---------- tokenizer ----------
-const DELIMS = new Set([' ', '\t', '\n', '\r', '(', ')', '$', '*', '+', '-', '/', '<', '=', '>']);
+const DELIMS = new Set([' ', '(', ')', '$', '*', '+', '-', '/', '<', '=', '>']);
 const OPS = new Set(['*', '+', '-', '/', '<', '=', '>']);
 
 export function tokenize(src) {
@@ -187,12 +185,12 @@ export function tokenize(src) {
   let i = 0;
   while (i < src.length) {
     const c = src[i];
-    if (c === ' ' || c === '\t' || c === '\n' || c === '\r') { i++; continue; }
+    if (c === ' ') { i++; continue; }
     if (c === '(' || c === ')') { toks.push({ t: c }); i++; continue; }
     if (OPS.has(c)) { toks.push({ t: 'op', v: c }); i++; continue; }
     if (c === "'" || c === '"') {
       const j = src.indexOf(c, i + 1);
-      if (j < 0) { toks.push({ t: 'err', v: 'unterminated string' }); break; }
+      if (j < 0) break;
       toks.push({ t: 'val', v: { ...str(src.slice(i + 1, j)), literal: true } });
       i = j + 1;
       continue;
@@ -208,9 +206,8 @@ export function tokenize(src) {
     while (j < src.length && !DELIMS.has(src[j]) && src[j] !== "'" && src[j] !== '"') j++;
     const w = src.slice(i, j);
     i = j;
-    const lw = w.toLowerCase();
-    if (lw === 'and' || lw === 'or') toks.push({ t: 'op', v: lw });
-    else if (lw === 'not') toks.push({ t: 'not' });
+    if (w === 'and' || w === 'or') toks.push({ t: 'op', v: w });
+    else if (w === 'not') toks.push({ t: 'not' });
     else if (w.startsWith('#')) toks.push({ t: 'prop', v: w });
     else toks.push({ t: 'val', v: classifyWord(w) });
   }
@@ -234,7 +231,8 @@ export function evaluate(src, ctx = {}) {
     const peek = () => toks[pos];
     const lookupProp = (name) => {
       props.add(name);
-      const v = ctx.prop ? ctx.prop(name) : undefined;
+      if (!ctx.prop) return str(name);
+      const v = ctx.prop(name);
       return v === undefined ? NULL : v;
     };
     const resolveHash = (val) => (val.k === 'str' && val.v.startsWith('#') && val.v.length > 1 ? lookupProp(val.v) : val);
@@ -245,9 +243,9 @@ export function evaluate(src, ctx = {}) {
       if (t.t === 'not') return bool(!truthy(operand()));
       if (t.t === 'op' && (t.v === '-' || t.v === '+')) {
         const v = operand();
-        if (t.v === '+') return v;
-        if (v.k === 'str') return int(0);
-        return v.k === 'num' ? num(-v.v) : int(-numberOf(v));
+        if (v.k === 'num') return t.v === '+' ? v : num(-v.v);
+        const n = v.k === 'str' || v.k === 'json' ? 0 : numberOf(v);
+        return int(t.v === '+' ? n : -n);
       }
       if (t.t === '(') {
         const v = expression(99);
@@ -259,7 +257,8 @@ export function evaluate(src, ctx = {}) {
       if (t.t === 'var') {
         vars.add(t.v);
         const v = ctx.variable ? ctx.variable(t.v) : undefined;
-        return v === undefined ? NULL : v;
+        if (v === undefined) return NULL;
+        return v.k === 'str' && v.v.length > 1 && v.v.startsWith('#') ? lookupProp(v.v) : v;
       }
       if (t.t === 'val') return t.v;
       throw new ExprError('Invalid expression');
