@@ -114,7 +114,10 @@ export function renderTree(stage, root, opts) {
       ctx.clip();
     }
     let mark = null;
-    if (t === 'image') mark = drawImage(ctx, n, textures, k);
+    if (t === 'image') {
+      mark = drawImage(ctx, n, textures, k);
+      if (visible && n.eff?.texture) opts.onRendered?.(n);
+    }
     else if (t === 'label') drawLabel(ctx, n, zoom, dpr);
     else {
       const item = isItem && itemIcons ? drawItem(ctx, n, itemIcons, textures, zoom, dpr) : false;
@@ -216,7 +219,8 @@ function drawImage(ctx, n, textures, k) {
   }
   const tiled = n.props.tiled;
   const repeat = { x: 'repeat-x', y: 'repeat-y', xy: 'repeat', yx: 'repeat' }[tiled] ?? (tiled === true ? 'repeat' : null);
-  const uv = Array.isArray(n.props.uv) && Array.isArray(n.props.uv_size);
+  const uvAt = n.eff?.uv ?? n.props.uv, uvSize = n.eff?.uv_size ?? n.props.uv_size;
+  const uv = Array.isArray(uvAt) && Array.isArray(uvSize);
   if (repeat && !uv) {
     const pattern = ctx.createPattern(src, repeat);
     pattern.setTransform(new DOMMatrix([1, 0, 0, 1, x, y]));
@@ -226,7 +230,7 @@ function drawImage(ctx, n, textures, k) {
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (uv) {
-    const [u, v] = n.props.uv, [uw, vh] = n.props.uv_size;
+    const [u, v] = uvAt, [uw, vh] = uvSize;
     ctx.drawImage(src, u, v, uw, vh, ...box());
   } else if (n.props.keep_ratio !== false) {
     // keep_ratio (on by default) fits the texture inside, centred; with fill it covers and is cut

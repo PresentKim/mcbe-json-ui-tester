@@ -5,6 +5,9 @@ import { evaluate, fromJson, toJson, truthy, lintExpression, tokenize } from './
 import { instantiate, Scope, scopeVar, pathOf } from './resolve.js';
 import { splitKey, qualify } from './catalog.js';
 import { localize } from './lang.js';
+import { AnimRuntime } from './anim.js';
+
+const ANIM_EFF = ['alpha', 'clip_ratio', 'color', 'uv', 'uv_size'];
 
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 
@@ -52,6 +55,25 @@ export class Session {
     this.opts = opts; // { measured: bool }
     this.tick = 0;
     this.events = [];
+    this.anim = new AnimRuntime(cat);
+    this.animTime = 0;
+  }
+
+  advanceAnimations(dt) {
+    const { events, destroyed } = this.anim.step(dt);
+    this.animTime += dt;
+    for (const e of events) this.anim.dispatch(e);
+    return { events, destroyed, layout: this.syncAnimations() || destroyed };
+  }
+
+  syncAnimations() {
+    const { touched, layout } = this.anim.takeChanges();
+    for (const n of touched) if (n.eff) this.applyAnim(n, n.eff);
+    return layout;
+  }
+
+  applyAnim(node, eff) {
+    if (node.anim) for (const k of ANIM_EFF) if (node.anim[k] !== undefined) eff[k] = node.anim[k];
   }
 
   diag(node, level, msg) {
@@ -71,7 +93,7 @@ export class Session {
   run(host) {
     this.host = host;
     this.tick++;
-    walk(this.tree, (n) => { n.bindDiags = []; });
+    walk(this.tree, (n) => { n.bindDiags = [...(n.animDiags || [])]; });
     // A tick runs frames until visibility settles: a layout shown in one frame runs its
     // "visible" bindings in the next one, as the game does over its next frames.
     for (let frame = 0; frame < 6; frame++) {
@@ -81,6 +103,7 @@ export class Session {
         this.bindAll();
         if (!this.expandFactories()) break;
       }
+      walk(this.tree, (n) => this.anim.attach(n));
       this.applyAll();
       let changed = false;
       walk(this.tree, (n) => { if (n.prevVisible !== n.effVisible) changed = true; n.prevVisible = n.effVisible; n.bound = true; });
@@ -600,6 +623,7 @@ export class Session {
       eff.texture = pick('#texture', 'texture', 'str');
       eff.color = pick('#color', 'color', 'json');
       eff.toggle_state = pick('#toggle_state', null, 'bool');
+      this.applyAnim(node, eff);
       for (const k of ['#size_binding_x', '#size_binding_y', '#size_binding_x_absolute', '#size_binding_y_absolute', '#anchored_offset_value_x', '#anchored_offset_value_y']) {
         const v = onlyBound(k) ? bag.get(k) : undefined;
         if (v && (v.k === 'int' || v.k === 'num')) eff[k] = v.v;
@@ -684,6 +708,16 @@ export class Session {
     const maps = (Array.isArray(btn.props.button_mappings) ? btn.props.button_mappings : []).filter((m) => !elementIgnored(m, btn));
     const pressed = maps.filter((m) => isObj(m) && (m.from_button_id === 'button.menu_select' || !m.from_button_id) && (m.mapping_type ?? 'pressed') === 'pressed');
     const to = pressed.map((m) => m.to_button_id).filter(Boolean);
+    const reacted = to.reduce((sum, id) => sum + this.anim.dispatch(id), 0);
+    const r = this.pressAnswer(btn, to);
+    if (reacted) {
+      r.anim = { reacted, layout: this.syncAnimations() };
+      r.msg += ` (애니메이션 ${reacted}개가 버튼 이벤트에 반응)`;
+    }
+    return r;
+  }
+
+  pressAnswer(btn, to) {
     const known = to.find((t) => /^button\.(form_button_click|submit_custom_form|menu_exit|menu_cancel|close|drop_one|drop_all)$/.test(t));
     if (to.includes('button.form_button_click')) {
       if (!btn.details || !btn.details.has('form_buttons')) {

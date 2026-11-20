@@ -37,6 +37,7 @@
 | 왼쪽 "파일" | 읽은 UI 파일을 고쳐 바로 적용한다(Ctrl+Enter) |
 | 가운데 | 화면. 컨트롤을 누르면 고르고, 버튼·토글이면 엔진의 응답을 흉내 낸다. 마우스를 올리면 호버 상태가 된다 |
 | "처음부터 다시" / "다음 틱" | 트리를 새로 만든다 / 컨트롤 상태를 유지한 채 호스트 데이터를 다시 보낸다 |
+| "애니메이션 재생" | 애니메이션 시간을 실제 시간으로 흘리고 멈춘다. 옆에 흐른 시간이 나온다 |
 | 오른쪽 "호스트" | 화면에 줄 데이터: 서버 폼, HUD, 상자, 직접 JSON(`globals`, `collections`, `factories`, `hostVars`) |
 | 오른쪽 "검사"·"진단"·"식 실험" | 위 1절 |
 
@@ -109,7 +110,8 @@ npm test
 - **게임이 아니다.** 두 엔진 모델 모두 틀릴 수 있다. 근거끼리 갈리는 곳은 진단에 "게임 확인 필요"로 적는다.
 - **엔진 렌더러는 그리지 않는다.** `live_player_renderer`, `live_horse_renderer` 등은 자리표시뿐이라 아래 실측(모바일 1.26.63, 상자 화면)은 진단으로만 알린다. `inventory_item_renderer` 아이콘과 `live_player_renderer`는 팩 창 안의 조상 레이어 합이 94까지는 그려지고 99부터 그려지지 않았다(95~98은 시험하지 않음, ANI-38). 이 도구의 레이어 합은 바닐라 조상까지 더한 값이라 실측의 합보다 크다. `live_horse_renderer`는 합과 상관없이 그려졌다. `live_player_renderer`는 로컬 플레이어만 그린다. `live_horse_renderer`의 `#entity_id`는 큰따옴표로 감싼 칸 이름(`"<id>"`)에서 읽은 글자면 그려지고, 숫자만 있는 이름은 정수로 바뀌어(EXP-30) 그려지지 않는다. 커스텀 엔티티는 발끝이 컨트롤 가운데에, 플레이어는 머리가 컨트롤 위끝 가까이에 오며, 커스텀 엔티티 컨트롤을 크기의 1.35배만큼 내리면 플레이어와 같은 자리가 된다.
 - **상자 칸 흉내**: `#inventory_stack_count`는 개수 0과 1이면 빈 글자, 2~64면 숫자 글자다. 칸에 최대 내구도를 주면 `#item_durability_total_amount`, `#item_durability_current_amount` 둘 다 그 값을 실수로 준다(실측: 두 바인딩 모두 최대 내구도였다). 닳은 내구도는 흉내 내지 않는다.
-- **엔진 데이터는 흉내다.** 화면 컨트롤러가 주는 바인딩은 `src/engine/host.js`의 일부만 있다. 모르는 전역값은 없음(또는 `#visible` false)으로 본다. 종이 인형, 스크롤 동작, 애니메이션, 입력 포커스, 소리는 그리지 않는다(아이템이 아닌 엔진 렌더러는 "윤곽"을 켜면 자리표시로 보인다).
+- **엔진 데이터는 흉내다.** 화면 컨트롤러가 주는 바인딩은 `src/engine/host.js`의 일부만 있다. 모르는 전역값은 없음(또는 `#visible` false)으로 본다. 종이 인형, 스크롤 동작, 입력 포커스, 소리는 그리지 않는다(아이템이 아닌 엔진 렌더러는 "윤곽"을 켜면 자리표시로 보인다).
+- **애니메이션**: `src/engine/anim.js`가 Windows 1.26.65.1 클라이언트 코드에서 읽은 규칙(easing 32개, `alpha`·`clip`·`color`·`uv`·`offset`·`size`·`flip_book`·`wait`, `next`와 넘친 시간, `play_event`·`reset_event`·`animation_reset_name`, `end_event`, `destroy_at_end`)으로 돌린다. 게임 안 실측은 아니다. 버튼을 누르면 `to_button_id`가 버튼 이벤트로 가고, `end_event`도 같은 화면에 다시 보낸다. 화면이 주는 `$title_fade_in_time` 같은 변수는 흉내 내지 않아 정해지지 않은 `duration`은 기본 1초다. `aseprite_flip_book`(사이드카 형식 모름), 첫 프레임 빨리 감기(`disable_anim_fast_forward`), 화면 진입·퇴장 이벤트는 없다.
 - **아이템 아이콘**: `data/item-atlas.json`(바닐라 1.26.50.4, 1,623개 중 1,538개에 텍스처)으로 숫자 ID를 아이콘에 잇는다. 텍스처가 없는 85개(새 스폰 알, 음반, 하네스 등)는 이름만 보인다. 숫자 ID는 버전과 커스텀 아이템 수에 따라 밀리므로(ANI-06) 다른 버전·서버에서는 다른 아이템이 보일 수 있다. 서버 아이템은 시나리오의 `items`로 잇는다(위 2.2). 아이콘은 렌더러 칸을 가득 채운다(22px 칸이면 22px). 블록은 게임에서 잰 카메라(45° 돌리고 30° 숙인 정사영, 정육면체 폭이 아이콘의 7/8)로 정육면체·반 블록·판유리 모양을 그린다. 서버 블록의 자체 모델(`models/**/*.geo.json`의 bone·cube·회전·면별/박스 UV·material instance)도 그린다(`src/engine/geometry.js`). 게임에서 잰 대로 모델은 경계 구의 크기에 맞춰 키워 가운데 두고(14×15×14 체는 1.12배), 정육면체 블록과 반 바퀴 돌아 보이며(모델의 north 면이 오른쪽), 서버 블록은 옆면을 어둡게 하지 않는다. 바닐라 블록의 옆면 밝기는 왼쪽 0.73, 오른쪽 0.5다(실측). 왼쪽 면이 east인지 거울에 비친 west인지는 좌우가 같은 모델밖에 없어 확인하지 못했다. 면은 깊이 순서로 그려 서로 파고드는 큐브는 틀릴 수 있다. 계단·울타리 같은 바닐라 모델, 마법 부여 반짝임, 내구도 막대는 없다.
 - **글자**: 줄바꿈과 글자 폭은 게임 글꼴의 폭표(`data/font-metrics.json`)로 잰다. 위쪽 "게임 언어"가 한국어면(기본) 한글 등 ASCII 밖 글자가 섞인 글은 ASCII도 유니코드 글꼴(`glyph_00`) 폭을 쓰고, ASCII만 있는 글은 `default8`을 쓴다(게임 실측). 영어면 ASCII는 늘 `default8`이다. 글자 모양은 브라우저 글꼴이라 획이 게임보다 1px쯤 위로 올라오고, 한 글자 안에서 1px쯤 어긋날 수 있다. 현지화는 하지 않는다(lang 키는 점선 밑줄로 표시).
 - **텍스처**: PNG·JPG만 그린다(TGA 없음). 화면은 캔버스 하나에 그린다. 틴트는 텍스처에 색을 곱하는 것이라 게임 색과 조금 다를 수 있다. `grayscale`은 브라우저의 휘도 계산을 쓴다.
@@ -126,6 +128,7 @@ npm test
 | `src/engine/catalog.js` | `_ui_defs` 정렬 로드, 같은 경로 병합, 경로 키, `modifications` 11개 연산 | FILE-20~22, MOD-* |
 | `src/engine/resolve.js` | `@` 상속, `$` 스코프(확정값 우선), `variables`, `ignored`(부모 스코프, 가장 먼저) | FILE-*, NB |
 | `src/engine/bind.js` | 속성 주머니, 팩토리·그리드·컬렉션, global/collection/view 바인딩, `binding_condition` 틱, 버튼·토글 상태, 누름 흉내 | BND-*, COL-*, INP-* |
+| `src/engine/anim.js` | 애니메이션 정의, easing, 컨트롤별 진행, 버튼 이벤트, `next`·`destroy_at_end` | ANI-* |
 | `src/engine/layout.js` | 크기, 앵커, 스택(숨은 자식 공간 없음), 그리드, 레이어, 클리핑, 가려짐 검사 | LAY-* |
 | `src/engine/host.js` | 서버 폼, HUD, 상자 화면 흉내 데이터 | HOST-* |
 | `src/render.js`, `src/app.js`, `index.html`, `app.css` | 브라우저 GUI | — |

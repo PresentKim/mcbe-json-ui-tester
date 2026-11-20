@@ -388,6 +388,7 @@ function rebuild() {
   state.tree = tree;
   state.buildDiags = diags;
   state.session = new Session(state.cat, tree, opts());
+  state.session.anim.textureSize = animTextureSize;
   state.session.run(host);
   layoutTree(tree, screenSize(), layoutOpts());
   const ms = Math.round(performance.now() - t0);
@@ -432,6 +433,44 @@ function renderAll() {
   renderDetails();
   renderDiags();
   $('tickInfo').textContent = state.session ? `틱 ${state.session.tick}` : '';
+  showAnimTime();
+}
+
+function animTextureSize(n) {
+  const info = n.eff?.texture ? textureLookup(n.eff.texture) : null;
+  return info?.w ? [info.w, info.h] : null;
+}
+
+const animClock = { playing: false, last: 0, raf: 0 };
+function showAnimTime() {
+  $('animTime').textContent = state.session ? `애니메이션 ${state.session.animTime.toFixed(2)}초` : '';
+}
+
+function animFrame(now) {
+  if (state.session && state.tree) {
+    const r = state.session.advanceAnimations(Math.max(0, now - animClock.last) / 1000);
+    if (r.layout) layoutTree(state.tree, screenSize(), layoutOpts());
+    for (const e of r.events) {
+      const li = document.createElement('li');
+      li.textContent = `end_event ${e}`;
+      $('pressLog').prepend(li);
+    }
+    renderStage();
+    if (r.destroyed) { renderTreeView(); renderDiags(); }
+  }
+  animClock.last = now;
+  showAnimTime();
+  animClock.raf = requestAnimationFrame(animFrame);
+}
+
+function toggleAnim() {
+  animClock.playing = !animClock.playing;
+  $('animPlay').textContent = animClock.playing ? '애니메이션 멈춤' : '애니메이션 재생';
+  cancelAnimationFrame(animClock.raf);
+  if (animClock.playing) {
+    animClock.last = performance.now();
+    animClock.raf = requestAnimationFrame(animFrame);
+  }
 }
 
 function renderStage() {
@@ -445,6 +484,7 @@ function renderStage() {
     zoom: z, textures: textureLookup, items: itemLookup, outlines: $('outlines').checked, showHidden: $('showHidden').checked,
     selectedUid: state.selected?.uid,
     onPick: (uid) => pick(uid, true),
+    onRendered: (n) => state.session?.anim.rendered(n),
     onHover: (uid) => {
       if (state.session.hoverUid === uid) return;
       state.session.hoverUid = uid;
@@ -473,6 +513,7 @@ function pick(uid, fromStage) {
       $('pressLog').prepend(li);
       toast(r.msg);
       if (r.kind === 'toggle') { state.session.applyAll(); layoutTree(state.tree, screenSize(), layoutOpts()); }
+      else if (r.anim?.layout) layoutTree(state.tree, screenSize(), layoutOpts());
     }
   }
   renderStage();
@@ -635,6 +676,7 @@ $('applyFile').onclick = applyFile;
 $('fileEditor').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); applyFile(); } });
 $('rebuild').onclick = rebuild;
 $('tick').onclick = tick;
+$('animPlay').onclick = toggleAnim;
 $('applyHost').onclick = rebuild;
 $('hostKind').onchange = () => { syncHostKind(); rebuild(); };
 $('rootRef').addEventListener('change', rebuild);

@@ -24,6 +24,7 @@ const readFloat = (w) => {
 };
 
 export function parseSize(x) {
+  if (x && typeof x === 'object' && x.kind) return x;
   if (x === 'fill') return { kind: 'fill' };
   if (x === 'default') return { kind: 'default' };
   if (typeof x === 'number') return { kind: 'terms', terms: [{ v: x, unit: 'px' }] };

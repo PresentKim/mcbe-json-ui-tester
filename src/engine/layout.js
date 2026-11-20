@@ -4,6 +4,7 @@
 
 import { parseSize, resolveTerms, usesChildren, usesSiblings } from './size.js';
 import { layoutText } from './font.js';
+import { isAnimRef } from './anim.js';
 
 const FONT_SCALE = { small: 0.8, normal: 1, large: 1.5, extra_large: 2 };
 
@@ -20,6 +21,7 @@ const anchorFactor = (a) => {
 };
 
 const sizePair = (v) => (Array.isArray(v) ? [v[0], v[1]] : ['default', 'default']);
+const sizeProp = (n) => n.anim?.size ?? n.props.size;
 const usesSelf = (spec, unit) => spec.kind === 'terms' && spec.terms.some((t) => t.unit === unit);
 const SIZE_MIN = -32768, SIZE_MAX = 32767;
 
@@ -40,7 +42,7 @@ export function layoutTree(root, screen, opts = {}) {
   function sizeOf(node, pw, ph, siblingMax) {
     const p = node.props;
     const eff = node.eff || {};
-    const [sx, sy] = sizePair(p.size);
+    const [sx, sy] = sizePair(sizeProp(node));
     const specs = [parseSize(sx), parseSize(sy)];
     const res = [0, 0];
     const label = p.type === 'label';
@@ -128,9 +130,9 @@ export function layoutTree(root, screen, opts = {}) {
     const visibleKids = kids.filter((c) => c.eff?.visible !== false);
     // sibling max for %sm; siblings that use %sm themselves are excluded (CN-47)
     const sibMax = [0, 0];
-    if (kids.some((c) => sizePair(c.props.size).some((s) => usesSiblings(parseSize(s))))) {
+    if (kids.some((c) => sizePair(sizeProp(c)).some((s) => usesSiblings(parseSize(s))))) {
       for (const c of kids) {
-        const pr = sizePair(c.props.size).map(parseSize);
+        const pr = sizePair(sizeProp(c)).map(parseSize);
         if (pr.some(usesSiblings)) continue;
         const [cw, ch] = measureNode(c, w, h, [0, 0]);
         sibMax[0] = Math.max(sibMax[0], cw); sibMax[1] = Math.max(sibMax[1], ch);
@@ -142,7 +144,7 @@ export function layoutTree(root, screen, opts = {}) {
       const fills = [];
       let used = 0;
       for (const c of kids) {
-        const spec = parseSize(sizePair(c.props.size)[ax]);
+        const spec = parseSize(sizePair(sizeProp(c))[ax]);
         if (spec.kind === 'fill') { fills.push(c); continue; }
         const sz = measureNode(c, w, h, sibMax);
         if (c.eff?.visible !== false) used += sz[ax]; // hidden children take no space (LAY-04)
@@ -203,7 +205,7 @@ export function layoutTree(root, screen, opts = {}) {
         const [fx, fy] = anchorFactor(c.props.anchor_from);
         let [tx, ty] = anchorFactor(c.props.anchor_to);
         let ox = 0, oy = 0;
-        const off = c.eff?.offsetBound || c.props.offset;
+        const off = c.anim?.offset || c.eff?.offsetBound || c.props.offset;
         if (off !== undefined) {
           const [a, b] = sizePair(off);
           const pa = parseSize(a), pb = parseSize(b);
@@ -356,7 +358,7 @@ export function findLayoutIssues(nodes) {
   for (const n of nodes) {
     for (const k of ['size', 'offset', 'min_size', 'max_size']) {
       const v = n.props[k];
-      if (v !== undefined && v !== null && !Array.isArray(v)) out.push({ node: n, level: 'warn', msg: `${k}가 배열이 아니다(${JSON.stringify(v)}). 엔진은 expected an array를 남기고 두 축 모두 default로 읽는다` });
+      if (v !== undefined && v !== null && !Array.isArray(v) && !isAnimRef(v)) out.push({ node: n, level: 'warn', msg: `${k}가 배열이 아니다(${JSON.stringify(v)}). 엔진은 expected an array를 남기고 두 축 모두 default로 읽는다` });
     }
     for (const k of ['anchor_from', 'anchor_to']) {
       const v = n.props[k];
