@@ -27,6 +27,11 @@ const TYPES = ['global', 'collection', 'collection_details', 'view', 'none'];
 const COLLECTION_TYPES = ['stack_panel', 'grid', 'collection_panel'];
 const NO_INDEX_TYPES = ['label', 'image'];
 const FORM_BUTTON_EXPR = /^\(.*#form_button_(contents|length)(?![\w.:])/;
+const INPUT_TYPES = new Set(['button', 'dropdown', 'edit_box', 'input_panel', 'screen', 'scrollbar_box', 'scroll_track', 'scroll_view', 'selection_wheel', 'slider', 'slider_box', 'toggle', 'image_cycler', 'label_cycler', 'tooltip_trigger']);
+const MAPPING_TYPES = ['global', 'double_pressed', 'pressed', 'focused'];
+const mappingType = (m) => (MAPPING_TYPES.includes(m.mapping_type) ? m.mapping_type : 'pressed');
+const flag = (v, dflt) => (v === true || v === 'true' ? true : v === false || v === 'false' ? false : dflt);
+const inside = (r, x, y) => !!r && r.w > 0 && r.h > 0 && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
 
 // An array element can carry its own `ignored` (FILE-18): a boolean, or a $ expression already folded.
 function elementIgnored(el, node) {
@@ -57,6 +62,9 @@ export class Session {
     this.events = [];
     this.anim = new AnimRuntime(cat);
     this.animTime = 0;
+    this.hoverUids = new Set();
+    this.pressUids = new Set();
+    this.inputOrder = [];
   }
 
   advanceAnimations(dt) {
@@ -99,7 +107,7 @@ export class Session {
     for (let frame = 0; frame < 6; frame++) {
       for (let round = 0; round < 8; round++) {
         this.prepareBags();
-        this.initRadioToggles();
+        this.initToggles();
         this.bindAll();
         if (!this.expandFactories()) break;
       }
@@ -166,17 +174,32 @@ export class Session {
 
   // Radio toggles group by toggle_name across parents; the one whose index equals
   // toggle_group_default_selected starts checked, -1 checks none (INP-12, INP-35).
-  initRadioToggles() {
+  initToggles() {
     walk(this.tree, (node) => {
-      if (node.radioInit || !node.bag) return;
+      if (node.toggleInit || !node.bag || node.props.type !== 'toggle') return;
+      node.toggleInit = true;
       const members = this.radioGroup(node);
-      if (!members) return;
-      node.radioInit = true;
-      const forced = node.props.toggle_group_forced_index;
-      const index = Number.isInteger(forced) && forced >= 0 ? forced : members.indexOf(node);
+      if (!members) {
+        const d = node.props.toggle_default_state;
+        node.bag.set('#toggle_state', fromJson(d === true || d === 'true'));
+        return;
+      }
       const selected = node.props.toggle_group_default_selected ?? 0;
-      node.bag.set('#toggle_state', fromJson(index === selected));
+      node.bag.set('#toggle_state', fromJson(this.toggleIndex(node, members) === selected));
     });
+  }
+
+  toggleIndex(node, members) {
+    const forced = node.props.toggle_group_forced_index;
+    if (Number.isInteger(forced) && forced >= 0) return forced;
+    const cname = node.props.toggle_grid_collection_name;
+    if (typeof cname === 'string' && cname) {
+      for (let n = node; n.parent; n = n.parent) {
+        if (this.isCollectionParent(n.parent) && n.parent.props.collection_name === cname) return n.factoryIndex ?? (Number.isInteger(n.props.collection_index) ? n.props.collection_index : -1);
+      }
+    }
+    this.diagOnce(node, 'info', '라디오 토글의 인덱스를 toggle_group_forced_index나 toggle_grid_collection_name 컬렉션 항목에서 얻지 못해 같은 toggle_name 토글의 트리 순서를 썼다. 엔진 코드에서 이 경우의 인덱스는 모른다');
+    return members.indexOf(node);
   }
 
   // ---------- collections ----------
@@ -650,11 +673,12 @@ export class Session {
       while (q.length) { const n = q.shift(); if (n.ignored) continue; if (n.name === name) return n; q.push(...n.children); }
       return null;
     };
-    const hover = this.hoverUid === node.uid, pressed = this.pressUid === node.uid, locked = node.eff.enabled === false;
+    const hover = this.hoverUids.has(node.uid), pressed = this.pressUids.has(node.uid), locked = node.eff.enabled === false;
     let keys, want;
     if (p.type === 'button') {
       keys = ['default_control', 'hover_control', 'pressed_control', 'locked_control'];
-      want = locked ? 'locked_control' : pressed ? 'pressed_control' : hover ? 'hover_control' : 'default_control';
+      if (locked) want = typeof p.locked_control === 'string' && p.locked_control && find(p.locked_control) ? 'locked_control' : 'default_control';
+      else want = pressed ? 'pressed_control' : hover ? 'hover_control' : 'default_control';
     } else {
       const checked = !!node.eff.toggle_state;
       keys = ['unchecked_control', 'checked_control', 'unchecked_hover_control', 'checked_hover_control', 'unchecked_locked_control', 'checked_locked_control', 'unchecked_locked_hover_control', 'checked_locked_hover_control'];
@@ -689,32 +713,151 @@ export class Session {
   }
 
   // ---------- input ----------
-  press(node) {
-    // find the button the click lands on and how the engine would answer (COL-04, INP-04, INP-31)
+  mappingsOf(node) {
+    const list = (Array.isArray(node.props.button_mappings) ? node.props.button_mappings : []).filter((m) => isObj(m) && !elementIgnored(m, node));
+    const out = { any: null, general: [], toOnly: [] };
+    for (const m of list) {
+      const from = typeof m.from_button_id === 'string' ? m.from_button_id : '';
+      const to = typeof m.to_button_id === 'string' ? m.to_button_id : '';
+      if (from === 'any') out.any = m;
+      else if (!to) continue;
+      else if (from) out.general.push(m);
+      else if (mappingType(m) === 'pressed') out.toOnly.push(m);
+    }
+    return out;
+  }
+
+  hoverAt(nodes, x, y) {
+    const order = new Map();
+    walk(this.tree, (n) => order.set(n, order.size));
+    this.inputOrder = nodes.filter((n) => INPUT_TYPES.has(n.props.type) && n.effVisible && order.has(n))
+      .sort((a, b) => b.layerAbs - a.layerAbs || order.get(b) - order.get(a));
+    const next = new Set();
+    let taken = false;
+    for (const n of this.inputOrder) {
+      if (taken || flag(n.props.hover_enabled, true) === false) continue;
+      if (n.eff?.enabled === false || !inside(n.rect, x, y) || (n.clip && !inside(n.clip, x, y))) continue;
+      next.add(n.uid);
+      taken = flag(n.props.consume_hover_events, true);
+    }
+    const notes = [];
+    const byUid = new Map([...order.keys()].map((n) => [n.uid, n]));
+    for (const uid of new Set([...this.hoverUids, ...next])) {
+      const entered = next.has(uid);
+      if (entered === this.hoverUids.has(uid)) continue;
+      const n = byUid.get(uid);
+      if (!entered) this.pressUids.delete(uid);
+      if (n) notes.push(...this.hoverNotes(n, entered));
+    }
+    const changed = next.size !== this.hoverUids.size || [...next].some((u) => !this.hoverUids.has(u));
+    this.hoverUids = next;
+    return { changed, notes };
+  }
+
+  hoverNotes(node, entered) {
+    return this.mappingsOf(node).toOnly.map((m) => {
+      const r = { node, kind: 'hover', to: m.to_button_id, msg: `hover ${entered ? '들어옴' : '나감'} 알림 ${m.to_button_id}. from_button_id가 없는 매핑은 클릭이 아니다` };
+      if (entered) this.dispatchAnim(r);
+      return r;
+    });
+  }
+
+  pointerButton(down, { x, y, now = Date.now(), id = 'button.menu_select' } = {}) {
+    const out = [];
+    for (const n of this.inputOrder) {
+      const r = this.inputEvent(n, id, down, { x, y, now });
+      if (!r) continue;
+      out.push(r);
+      if (r.consumed) break;
+    }
+    return out;
+  }
+
+  inputEvent(node, id, down, ctx) {
+    const maps = this.mappingsOf(node);
+    const st = (node.inputState ||= { prev: new Map(), lastPress: new Map() });
+    const hovered = this.hoverUids.has(node.uid);
+    const touch = node.scope?.lookup('$touch') === true;
+    const candidates = maps.general.map((m, key) => ({ m, key })).filter((c) => c.m.from_button_id === id);
+    if (maps.any) candidates.unshift({ m: { from_button_id: id, to_button_id: id, mapping_type: 'pressed', scope: maps.any.scope }, key: 'any' });
+    let second = false;
+    if (down && candidates.some((c) => mappingType(c.m) === 'double_pressed')) {
+      const last = st.lastPress.get(id);
+      second = !!last && ctx.now - last.now <= 500 && Math.hypot(ctx.x - last.x, ctx.y - last.y) <= 10;
+      st.lastPress.set(id, { now: ctx.now, x: ctx.x, y: ctx.y });
+    }
+    for (const { m, key } of candidates) {
+      if (m.input_mode_condition === 'gamepad') continue;
+      const type = mappingType(m);
+      if ((type === 'double_pressed') !== second) continue;
+      const prev = st.prev.get(key) === true;
+      const ok = type === 'global' || (type === 'focused' ? hovered : this.positionOk(node, m, down, hovered, prev, ctx));
+      if (!ok) continue;
+      st.prev.set(key, down);
+      return this.deliver(node, m, down, touch ? !down && prev : down && !prev);
+    }
+    return null;
+  }
+
+  positionOk(node, m, down, hovered, prev, ctx) {
+    if (flag(m.ignore_input_scope, false) && node.eff?.enabled !== false) return true;
+    if (hovered) return true;
+    if (flag(node.props.always_listen_to_input, false) && inside(node.rect, ctx.x, ctx.y)) return true;
+    return !down && prev && flag(m.button_up_right_of_first_refusal, false);
+  }
+
+  deliver(node, m, down, edge) {
+    const t = node.props.type, locked = node.eff?.enabled === false;
+    const isButton = t === 'button' || t === 'edit_box';
+    if (isButton && !locked) {
+      if (down) this.pressUids.add(node.uid);
+      else this.pressUids.delete(node.uid);
+    }
+    const consumed = (isButton ? locked || flag(node.props.consume_event, true) : true) && flag(m.consume_event, true);
+    const r = { node, to: m.to_button_id, down, edge, consumed, kind: 'event', msg: `버튼 이벤트 ${m.to_button_id}` };
+    if (!edge) return r;
+    if (t === 'toggle') Object.assign(r, this.toggleClick(node));
+    else if (t === 'button') Object.assign(r, this.pressAnswer(node, [m.to_button_id]));
+    this.dispatchAnim(r);
+    return r;
+  }
+
+  dispatchAnim(r) {
+    const reacted = this.anim.dispatch(r.to);
+    if (!reacted) return;
+    r.anim = { reacted, layout: this.syncAnimations() };
+    r.msg += ` (애니메이션 ${reacted}개가 버튼 이벤트에 반응)`;
+  }
+
+  toggleClick(btn) {
+    const p = btn.props;
+    if (!btn.effVisible || btn.eff?.enabled === false) return { kind: 'toggle', msg: '잠긴 토글은 바뀌지 않는다' };
+    const noOnOff = !p.toggle_on_button || !p.toggle_off_button;
+    if (this.opts.measured && noOnOff) return { kind: 'toggle', msg: 'toggle_on_button/toggle_off_button이 없어 눌리지 않는다(실측). 클라이언트 코드로는 토글 자신의 button_mappings만 있으면 눌리고 두 키는 enable_directional_toggling에서만 쓰인다(CN 모델이 이 규칙). 게임 확인 필요 [INP-11]' };
+    const note = noOnOff ? '. toggle_on_button/toggle_off_button이 없다: 클라이언트 코드로는 필요 없지만 실측에서는 없으면 눌리지 않았다(실측 우선 모델이 이 규칙). 게임 확인 필요 [INP-11]' : '';
+    const group = this.radioGroup(btn);
+    if (group) {
+      for (const m of group) m.bag?.set('#toggle_state', fromJson(m === btn));
+      return { kind: 'toggle', msg: `라디오 ${p.toggle_name}: ${btn.name}만 켜진다 (토글 ${group.length}개) [INP-35]${note}` };
+    }
+    const cur = btn.bag.get('#toggle_state');
+    btn.bag.set('#toggle_state', fromJson(!(cur && truthy(cur))));
+    return { kind: 'toggle', msg: `토글 ${btn.name} → ${!(cur && truthy(cur))}${note}` };
+  }
+
+  // A whole click (press and release) on the nearest button or toggle, as if the pointer were over it.
+  press(node, now = Date.now()) {
     let btn = node;
     while (btn && btn.props.type !== 'button' && btn.props.type !== 'toggle') btn = btn.parent;
     if (!btn) return { kind: 'none', msg: '버튼이 아닌 곳' };
-    if (btn.props.type === 'toggle') {
-      if (!btn.props.toggle_on_button || !btn.props.toggle_off_button) return { kind: 'toggle', msg: 'toggle_on_button/toggle_off_button이 없어 그려지기만 하고 눌리지 않는다 [INP-11]' };
-      const group = this.radioGroup(btn);
-      if (group) {
-        for (const m of group) m.bag?.set('#toggle_state', fromJson(m === btn));
-        return { kind: 'toggle', msg: `라디오 ${btn.props.toggle_name}: ${btn.name}만 켜진다 (토글 ${group.length}개) [INP-35]` };
-      }
-      const cur = btn.bag.get('#toggle_state');
-      btn.bag.set('#toggle_state', fromJson(!(cur && truthy(cur))));
-      return { kind: 'toggle', msg: `토글 ${btn.name} → ${!(cur && truthy(cur))}` };
-    }
-    const maps = (Array.isArray(btn.props.button_mappings) ? btn.props.button_mappings : []).filter((m) => !elementIgnored(m, btn));
-    const pressed = maps.filter((m) => isObj(m) && (m.from_button_id === 'button.menu_select' || !m.from_button_id) && (m.mapping_type ?? 'pressed') === 'pressed');
-    const to = pressed.map((m) => m.to_button_id).filter(Boolean);
-    const reacted = to.reduce((sum, id) => sum + this.anim.dispatch(id), 0);
-    const r = this.pressAnswer(btn, to);
-    if (reacted) {
-      r.anim = { reacted, layout: this.syncAnimations() };
-      r.msg += ` (애니메이션 ${reacted}개가 버튼 이벤트에 반응)`;
-    }
-    return r;
+    const hover = this.hoverUids;
+    this.hoverUids = new Set([...hover, btn.uid]);
+    const rs = [true, false].map((down) => this.inputEvent(btn, 'button.menu_select', down, { now }));
+    this.hoverUids = hover;
+    const r = rs.find((x) => x?.edge);
+    if (r) return r;
+    if (btn.props.type === 'toggle') return { kind: 'toggle', msg: 'button.menu_select를 받는 button_mappings가 없어 눌리지 않는다 [INP-11]' };
+    return this.pressAnswer(btn, []);
   }
 
   pressAnswer(btn, to) {

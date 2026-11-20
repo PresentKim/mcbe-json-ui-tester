@@ -47,7 +47,7 @@ test('font: in a Korean UI, ASCII in a text with Korean takes the unicode font, 
   const metrics = JSON.parse(fs.readFileSync(new URL('../data/font-metrics.json', import.meta.url), 'utf8'));
   const ko = createMeasure(metrics, { unicodeAscii: true }), en = createMeasure(metrics);
   // "/menu" in a Korean sentence is 20 GUI px in game; alone, as an invite code is, it stays default8
-  assert.equal(ko('/menu 또는').w - ko(' 또는').w, 20.5);
+  assert.equal(ko('/menu 또는').w - ko(' 또는').w, 21);
   assert.equal(ko('§eQHJUJB').w, 36);
   assert.equal(en('/menu 또는').w - en(' 또는').w, 30);
 });

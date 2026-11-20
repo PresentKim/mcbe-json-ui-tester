@@ -153,16 +153,20 @@ export function renderTree(stage, root, opts) {
     const uid = pickAt(stage, e, items, zoom, showHidden);
     if (uid) onPick?.(uid, e);
   };
-  stage.onmousemove = (e) => onHover?.(pickAt(stage, e, items, zoom, showHidden, true));
+  stage.onmousemove = (e) => onHover?.(stagePoint(stage, e, zoom));
+  stage.onmouseleave = () => onHover?.(null);
 }
 
-function pickAt(stage, e, items, zoom, showHidden, buttonsOnly) {
+export function stagePoint(stage, e, zoom) {
   const r = stage.getBoundingClientRect();
-  const px = (e.clientX - r.left) / zoom, py = (e.clientY - r.top) / zoom;
+  return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
+}
+
+function pickAt(stage, e, items, zoom, showHidden) {
+  const { x: px, y: py } = stagePoint(stage, e, zoom);
   let best = null;
   for (const n of items) {
     if (!n.effVisible && !showHidden) continue;
-    if (buttonsOnly && n.props.type !== 'button' && n.props.type !== 'toggle') continue;
     const { x, y, w, h } = n.rect;
     if (px >= x && py >= y && px < x + w && py < y + h && w > 0 && h > 0) {
       if (!best || n.layerAbs > best.layerAbs || (n.layerAbs === best.layerAbs && n.drawOrder > best.drawOrder)) best = n;
@@ -358,30 +362,57 @@ function drawLabel(ctx, n, zoom, dpr) {
   const m = ctx.measureText('M');
   const ascent = Math.round(m.fontBoundingBoxAscent), descent = Math.round(m.fontBoundingBoxDescent);
   const baseline = Math.floor((lineH - ascent - descent) / 2) + ascent;
-  const base = css(n.eff?.color ?? n.props.color) || '#ffffff';
+  const step = (10 + (n.linePadding ?? 0)) * scale * zoom;
+  const paint = labelPaint(n);
+  ctx.globalAlpha *= paint.alpha;
+  const base = paint.color;
   const align = n.props.text_alignment || 'left';
   const lines = n.textLines || [{ text: n.eff?.text ?? '', w: 0, glyphs: null }];
-  let color = base, bold = false;
+  const shadow = n.props.shadow ? (n.textUnicode ? 0.5 : 1) * scale * zoom : 0;
+  let state = { color: base, bold: false };
   lines.forEach((line, row) => {
     const offset = align === 'center' ? (n.rect.w - line.w) / 2 : align === 'right' ? n.rect.w - line.w : 0;
-    let gx = (n.rect.x + Math.max(0, offset)) * zoom;
-    const gy = n.rect.y * zoom + row * lineH + baseline;
-    for (const g of line.glyphs ?? plainGlyphs(ctx, line.text, zoom)) {
-      if (g.code) {
-        const c = g.ch[1].toLowerCase();
-        if (COLOR_CODES[c]) { color = COLOR_CODES[c]; bold = false; }
-        else if (c === 'l') bold = true;
-        else if (c === 'r') { color = base; bold = false; }
-        continue;
-      }
-      ctx.font = font(bold);
-      if (n.props.shadow) {
-        ctx.fillStyle = 'rgba(0,0,0,.6)';
-        ctx.fillText(g.ch, gx + zoom, gy + zoom);
-      }
-      ctx.fillStyle = color;
-      ctx.fillText(g.ch, gx, gy);
-      gx += g.w * zoom;
-    }
+    const gx = (n.rect.x + Math.max(0, offset)) * zoom;
+    const gy = (n.rect.y + 1) * zoom + row * step + baseline;
+    const glyphs = line.glyphs ?? plainGlyphs(ctx, line.text, zoom);
+    if (shadow) drawGlyphs(ctx, glyphs, gx + shadow, gy + shadow, state, base, font, zoom, shadowCss);
+    state = drawGlyphs(ctx, glyphs, gx, gy, state, base, font, zoom, rgbaCss);
   });
+}
+
+function drawGlyphs(ctx, glyphs, x, y, state, base, font, zoom, paint) {
+  const s = { ...state };
+  for (const g of glyphs) {
+    if (g.code) { applyCode(s, g.ch[1], base); continue; }
+    ctx.font = font(s.bold);
+    ctx.fillStyle = paint(s.color);
+    ctx.fillText(g.ch, x, y);
+    x += g.w * zoom;
+  }
+  return s;
+}
+
+const rgbaOf = (c) => {
+  if (Array.isArray(c)) {
+    const [r, g, b, a = 1] = c.map(Number);
+    return [r * 255, g * 255, b * 255, a];
+  }
+  if (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) return [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)).concat(1);
+  return null;
+};
+const rgbaCss = ([r, g, b, a], k = 1) => `rgba(${Math.round(r * k)},${Math.round(g * k)},${Math.round(b * k)},${a})`;
+export const shadowCss = (rgba) => rgbaCss(rgba, 0.25);
+
+export function applyCode(state, c, base) {
+  if (c === 'l') state.bold = true;
+  else if (c === 'r') { state.color = base; state.bold = false; }
+  else if (COLOR_CODES[c]) state.color = [...rgbaOf(COLOR_CODES[c]).slice(0, 3), base[3]];
+}
+
+export function labelPaint(n) {
+  let locked = false;
+  for (let p = n; p; p = p.parent) if (p.eff?.enabled === false) locked = true;
+  const color = rgbaOf(n.eff?.color ?? n.props.color) || [255, 255, 255, 1];
+  if (!locked) return { color, alpha: 1 };
+  return { color: rgbaOf(n.props.locked_color) || color, alpha: typeof n.props.locked_alpha === 'number' ? n.props.locked_alpha : 1 };
 }

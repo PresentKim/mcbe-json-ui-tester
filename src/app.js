@@ -2,13 +2,13 @@ import { buildCatalog } from './engine/catalog.js';
 import { parseJsonc } from './engine/jsonc.js';
 import { buildTree, pathOf } from './engine/resolve.js';
 import { Session, walk } from './engine/bind.js';
-import { layoutTree, findOcclusions, findRendererIssues, findLayoutIssues } from './engine/layout.js';
+import { layoutTree, findOcclusions, findRendererIssues, findLayoutIssues, wheelScroll, scrollViewAt } from './engine/layout.js';
 import { createMeasure } from './engine/font.js';
 import { parseLang } from './engine/lang.js';
 import { parseGeometryFiles } from './engine/geometry.js';
 import { evaluate, show, fromJson, lintExpression } from './engine/expr.js';
 import { serverFormHost, hudHost, chestHost, mergeHost, PLATFORMS, SCREENS } from './engine/host.js';
-import { renderTree } from './render.js';
+import { renderTree, stagePoint } from './render.js';
 import { SAMPLE_PACK, SAMPLE_FORM } from '../samples/sample-pack.js';
 
 const $ = (id) => document.getElementById(id);
@@ -483,17 +483,62 @@ function renderStage() {
   renderTree(stage, state.tree, {
     zoom: z, textures: textureLookup, items: itemLookup, outlines: $('outlines').checked, showHidden: $('showHidden').checked,
     selectedUid: state.selected?.uid,
-    onPick: (uid) => pick(uid, true),
+    onPick: (uid) => pick(uid),
     onRendered: (n) => state.session?.anim.rendered(n),
-    onHover: (uid) => {
-      if (state.session.hoverUid === uid) return;
-      state.session.hoverUid = uid;
-      state.session.applyAll();
-      layoutTree(state.tree, screenSize(), layoutOpts());
-      scheduleRender();
+    onHover: (pt) => {
+      if (!state.session) return;
+      const { changed, notes } = state.session.hoverAt(pt ? stageNodes() : [], pt?.x, pt?.y);
+      logInput(notes);
+      if (changed || notes.length) relayoutInput();
     },
   });
 }
+
+function stageNodes() {
+  const out = [];
+  walk(state.tree, (n) => { if (n.rect) out.push(n); });
+  return out;
+}
+
+function relayoutInput() {
+  state.session.applyAll();
+  layoutTree(state.tree, screenSize(), layoutOpts());
+  scheduleRender();
+}
+
+function logInput(results) {
+  for (const r of results) {
+    if (r.kind === 'event' && !r.edge) continue;
+    const li = document.createElement('li');
+    li.textContent = `${r.node.name}: ${r.msg}`;
+    $('pressLog').prepend(li);
+    if (r.kind !== 'event' && r.kind !== 'hover') toast(r.msg);
+  }
+}
+
+function stageButton(e, down) {
+  if (e.button !== 0 || !state.session || !state.tree) return;
+  const pt = stagePoint($('stage'), e, Number($('zoom').value));
+  state.session.hoverAt(stageNodes(), pt.x, pt.y);
+  logInput(state.session.pointerButton(down, { ...pt, now: e.timeStamp }));
+  relayoutInput();
+}
+
+function stageWheel(e) {
+  if (!state.session || !state.tree || !e.deltaY) return;
+  const pt = stagePoint($('stage'), e, Number($('zoom').value));
+  const view = scrollViewAt(stageNodes(), pt.x, pt.y);
+  if (!view) return;
+  e.preventDefault();
+  if (!wheelScroll(view, -Math.sign(e.deltaY))) return;
+  layoutTree(state.tree, screenSize(), layoutOpts());
+  state.session.hoverAt(stageNodes(), pt.x, pt.y);
+  relayoutInput();
+}
+
+$('stage').addEventListener('mousedown', (e) => stageButton(e, true));
+$('stage').addEventListener('mouseup', (e) => stageButton(e, false));
+$('stage').addEventListener('wheel', stageWheel, { passive: false });
 
 function findUid(uid) {
   let hit = null;
@@ -501,21 +546,10 @@ function findUid(uid) {
   return hit;
 }
 
-function pick(uid, fromStage) {
+function pick(uid) {
   const node = findUid(uid);
   if (!node) return;
   state.selected = node;
-  if (fromStage) {
-    const r = state.session.press(node);
-    if (r.kind !== 'none') {
-      const li = document.createElement('li');
-      li.textContent = `${node.name}: ${r.msg}`;
-      $('pressLog').prepend(li);
-      toast(r.msg);
-      if (r.kind === 'toggle') { state.session.applyAll(); layoutTree(state.tree, screenSize(), layoutOpts()); }
-      else if (r.anim?.layout) layoutTree(state.tree, screenSize(), layoutOpts());
-    }
-  }
   renderStage();
   renderTreeView();
   renderDetails();
@@ -538,7 +572,7 @@ function renderTreeView() {
     else if (!n.effVisible) label.classList.add('hid');
     if ((n.diags || []).some((d) => d.level !== 'info') || (n.bindDiags || []).length) label.classList.add('dg');
     if (sel && n.uid === sel.uid) label.classList.add('sel');
-    label.onclick = (e) => { e.preventDefault(); pick(n.uid, false); };
+    label.onclick = (e) => { e.preventDefault(); pick(n.uid); };
     if (!n.children.length) {
       const d = document.createElement('div');
       d.className = 'leaf';
@@ -636,7 +670,7 @@ function renderDiags() {
     li.querySelector('.lv').classList.add(d.level);
     li.querySelector('.m').textContent = d.msg;
     li.querySelector('.where').textContent = d.where || '';
-    if (d.uid) li.onclick = () => { pick(d.uid, false); showTab('inspect'); };
+    if (d.uid) li.onclick = () => { pick(d.uid); showTab('inspect'); };
     ul.append(li);
   }
   if (!list.length) ul.innerHTML = '<li class="hint">진단 없음</li>';

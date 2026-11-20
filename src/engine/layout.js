@@ -5,14 +5,18 @@
 import { parseSize, resolveTerms, usesChildren, usesSiblings } from './size.js';
 import { layoutText } from './font.js';
 import { isAnimRef } from './anim.js';
+import { bool } from './expr.js';
 
 const FONT_SCALE = { small: 0.8, normal: 1, large: 1.5, extra_large: 2 };
 
 // Approximate font used until the real metrics (font.js) are loaded: 6 px per ASCII glyph,
 // 9 px per wide glyph, 4 px space, 10 px line.
-export function defaultMeasure(text, scale = 1, maxWidth = Infinity) {
-  return layoutText(String(text ?? ''), scale, maxWidth, (ch) => (ch === ' ' ? 4 : ch.codePointAt(0) > 0x2e80 ? 9 : 6));
+export function defaultMeasure(text, scale = 1, maxWidth = Infinity, opts = {}) {
+  return layoutText(String(text ?? ''), scale, maxWidth, (ch) => (ch === ' ' ? 4 : ch.codePointAt(0) > 0x2e80 ? 9 : 6), opts);
 }
+
+const linePaddingOf = (p) => (typeof p.line_padding === 'number' ? p.line_padding : 0);
+const textWidthLimit = (w) => Math.trunc(w + 1e-6);
 
 const ANCHORS = ['top_left', 'top_middle', 'top_right', 'left_middle', 'center', 'right_middle', 'bottom_left', 'bottom_middle', 'bottom_right'];
 const anchorFactor = (a) => {
@@ -48,7 +52,7 @@ export function layoutTree(root, screen, opts = {}) {
     const label = p.type === 'label';
     const scale = (FONT_SCALE[p.font_size] ?? 1) * (typeof p.font_scale_factor === 'number' && p.font_scale_factor > 0 ? p.font_scale_factor : 1);
     let text = null;
-    if (label) text = measure(eff.text ?? '', scale);
+    if (label) text = measure(eff.text ?? '', scale, Infinity, { linePadding: linePaddingOf(p) });
     const order = usesSelf(specs[0], '%y') && !usesSelf(specs[1], '%x') ? [1, 0] : [0, 1];
     for (const ax of order) {
       const spec = specs[ax];
@@ -68,7 +72,7 @@ export function layoutTree(root, screen, opts = {}) {
     if (eff['#size_binding_y'] !== undefined) res[1] = eff['#size_binding_y'] * ph;
     if (eff['#size_binding_x_absolute'] !== undefined) res[0] = eff['#size_binding_x_absolute'];
     if (eff['#size_binding_y_absolute'] !== undefined) res[1] = eff['#size_binding_y_absolute'];
-    if (label && specs[0].kind !== 'default' && specs[1].kind === 'default') res[1] = measure(eff.text ?? '', scale, res[0]).h;
+    if (label && specs[0].kind !== 'default' && specs[1].kind === 'default') res[1] = measure(eff.text ?? '', scale, textWidthLimit(res[0]), { linePadding: linePaddingOf(p) }).h;
     return { res, specs };
   }
 
@@ -244,7 +248,11 @@ export function layoutTree(root, screen, opts = {}) {
       const p = node.props;
       const scale = (FONT_SCALE[p.font_size] ?? 1) * (typeof p.font_scale_factor === 'number' && p.font_scale_factor > 0 ? p.font_scale_factor : 1);
       node.fontScale = scale;
-      node.textLines = measure(node.eff?.text ?? '', scale, w + 0.01).lineTexts;
+      node.linePadding = linePaddingOf(p);
+      const text = measure(node.eff?.text ?? '', scale, textWidthLimit(w), { linePadding: node.linePadding, maxHeight: h });
+      node.textLines = text.lineTexts;
+      node.textUnicode = text.unicode;
+      if (node.bag) node.bag.set('#using_ellipses', bool(text.ellipsis));
     }
     const rect = { x, y, w, h };
     const lay = layer + (typeof node.props.layer === 'number' ? Math.trunc(node.props.layer) : 0); // relative to the parent (LAY-18)
@@ -254,7 +262,10 @@ export function layoutTree(root, screen, opts = {}) {
       const r = { x, y, w, h };
       childClip = clip ? intersect(clip, r) : r;
     }
-    for (const k of node.kidsLayout || []) position(k.c, x + k.x, y + k.y, lay, childClip, allowsClipping);
+    for (const k of node.kidsLayout || []) {
+      const [sx, sy] = k.c.scrollShift || [0, 0];
+      position(k.c, x + k.x + sx, y + k.y + sy, lay, childClip, allowsClipping);
+    }
   }
 
   measureNode(root, screen.w, screen.h, [0, 0]);
@@ -262,6 +273,7 @@ export function layoutTree(root, screen, opts = {}) {
   // runs again so a "fill" viewport takes the bar's place.
   if (hideFittingScrollbars(root)) { cache.clear(); measureNode(root, screen.w, screen.h, [0, 0]); }
   if (sizeScrollBoxes(root)) { cache.clear(); measureNode(root, screen.w, screen.h, [0, 0]); }
+  applyScroll(root);
   const [rw, rh] = root.size;
   const [fx, fy] = anchorFactor(root.props.anchor_from), [tx, ty] = anchorFactor(root.props.anchor_to);
   position(root, fx * screen.w - tx * rw, fy * screen.h - ty * rh, 0, null);
@@ -302,27 +314,92 @@ function hideFittingScrollbars(root) {
   return changed;
 }
 
-// The scrollbar box of a scroll view whose content overflows is as long as the track times the
-// part of the content the viewport shows, at the top (nothing is scrolled yet). Measured in game
-// 2026-10-23 (dfui help cards, research tree): the JSON gives the box no height; the engine does.
+function scrollParts(view) {
+  const p = view.props;
+  const box = findByName(view, p.scrollbar_box);
+  if (!box) return null;
+  return { axis: box.props.draggable === 'horizontal' ? 0 : 1, box, content: findByName(view, p.scroll_content), port: findByName(view, p.scroll_view_port), track: findByName(view, p.scrollbar_track) };
+}
+
+const scrollRatio = (s) => {
+  const content = s.content.size[s.axis];
+  return content > 0 ? Math.min(1, Math.max(0.1, s.port.size[s.axis] / content)) : 1;
+};
+
+// The engine overwrites the scrollbar box length on the box's draggable axis (Windows 1.26.65.1
+// client code; matches the 2026-10-23 measurement on dfui help cards and the research tree).
 function sizeScrollBoxes(root) {
   let changed = false;
   const visit = (n) => {
     if (n.ignored) return;
-    const p = n.props;
-    if (p.type === 'scroll_view') {
-      const content = findByName(n, p.scroll_content), port = findByName(n, p.scroll_view_port);
-      const track = findByName(n, p.scrollbar_track), box = findByName(n, p.scrollbar_box);
-      if (content?.size && port?.size && track?.size && box) {
-        const ratio = content.size[1] > port.size[1] + 0.01 ? port.size[1] / content.size[1] : 1;
-        const h = track.size[1] * ratio;
-        if (!box.engineSize || Math.abs(box.engineSize[1] - h) > 0.01) { box.engineSize = [undefined, h]; changed = true; }
+    if (n.props.type === 'scroll_view') {
+      const s = scrollParts(n);
+      if (s?.content?.size && s.port?.size && s.track?.size) {
+        const len = Math.ceil(s.track.size[s.axis] * scrollRatio(s));
+        if (!s.box.engineSize || s.box.engineSize[s.axis] !== len) { s.box.engineSize = s.axis === 0 ? [len, undefined] : [undefined, len]; changed = true; }
       }
     }
     for (const c of n.children) visit(c);
   };
   visit(root);
   return changed;
+}
+
+function applyScroll(root) {
+  const visit = (n) => {
+    if (n.ignored) return;
+    if (n.props.type === 'scroll_view') scrollTo(n, n.scrollPos ?? 0);
+    for (const c of n.children) visit(c);
+  };
+  visit(root);
+}
+
+function scrollTo(view, pos) {
+  const s = scrollParts(view);
+  if (!s?.content?.size || !s.port?.size) return false;
+  const { axis } = s;
+  const max = Math.max(0, s.content.size[axis] - s.port.size[axis]);
+  view.scrollPos = Math.min(max, Math.max(0, pos));
+  const shift = -Math.trunc(view.scrollPos * 8) / 8;
+  s.content.scrollShift = axis === 0 ? [shift, 0] : [0, shift];
+  if (s.track?.size && s.box.size) {
+    const along = (s.track.size[axis] - s.box.size[axis]) * view.scrollPos / (max > 0.5 ? max : 1);
+    s.box.scrollShift = axis === 0 ? [along, 0] : [0, along];
+  }
+  const bag = view.bag;
+  if (bag) {
+    if (!bag.has('#scrollbar_hit_bottom')) bag.set('#scrollbar_hit_bottom', bool(false));
+    const fits = scrollRatio(s) === 1;
+    if (fits || (axis === 1 && max - view.scrollPos < 0.1)) bag.set('#scrollbar_hit_bottom', bool(true));
+    bag.set('#scrolled_to_end', bool(max <= view.scrollPos));
+    bag.set('#scroll_bar_visible', bool(!fits || flagOn(view.props.scrollbar_always_visible)));
+  }
+  return true;
+}
+
+const flagOn = (v) => v === true || v === 'true';
+
+let wheelSpeed = null;
+
+// The client keeps -scroll_speed in a function-level static set by the first scroll view that gets
+// a wheel event, so that view's scroll_speed applies to every scroll view afterwards (Windows
+// 1.26.65.1 client code). The wheel unit is not known from the code: one notch is taken as the
+// screen's vertical_scroll_delta (default 20).
+export function wheelScroll(view, notches) {
+  const s = scrollParts(view);
+  if (!s || s.axis !== 1) return false;
+  if (wheelSpeed === null) wheelSpeed = -(typeof view.props.scroll_speed === 'number' ? view.props.scroll_speed : 1);
+  let screen = view;
+  while (screen && screen.props.type !== 'screen') screen = screen.parent;
+  const delta = typeof screen?.props.vertical_scroll_delta === 'number' ? screen.props.vertical_scroll_delta : 20;
+  return scrollTo(view, (view.scrollPos ?? 0) + wheelSpeed * notches * delta);
+}
+
+export function scrollViewAt(nodes, x, y) {
+  const hit = (r) => r && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+  let found = null;
+  for (const n of nodes) if (n.props.type === 'scroll_view' && n.effVisible && hit(n.rect) && (!n.clip || hit(n.clip))) found = n;
+  return found;
 }
 
 function intersect(a, b) {

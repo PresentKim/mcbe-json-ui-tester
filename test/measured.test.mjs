@@ -167,7 +167,7 @@ test('#form_button_length keeps the largest form seen in the session (COL-34)', 
 });
 
 test('radio toggles group by toggle_name across parents and start at the default index (INP-12, INP-35)', () => {
-  const radio = (extra = {}) => ({ type: 'toggle', radio_toggle_group: true, toggle_name: 'tab', toggle_group_default_selected: 1, toggle_on_button: 'on', toggle_off_button: 'off', ...extra });
+  const radio = (extra = {}) => ({ type: 'toggle', radio_toggle_group: true, toggle_name: 'tab', toggle_group_default_selected: 1, toggle_on_button: 'on', toggle_off_button: 'off', button_mappings: [{ from_button_id: 'button.menu_select', to_button_id: 'button.menu_select', mapping_type: 'pressed' }], ...extra });
   const { byName, s } = run({ r: { type: 'panel', controls: [
     { row1: { type: 'stack_panel', controls: [{ a: radio() }, { b: radio() }] } },
     { row2: { type: 'stack_panel', controls: [{ c: radio() }] } },
