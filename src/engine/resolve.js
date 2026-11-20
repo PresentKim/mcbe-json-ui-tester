@@ -208,7 +208,7 @@ export function instantiate(cat, ref, name, inline, parentScope, parent, env, pe
   for (const b of blocks) {
     if (!isObj(b)) continue;
     const req = forceEvaluate(b.requires ?? null, frame);
-    if (req.note) node.diags.push({ level: 'info', msg: `requires: ${req.note}` });
+    if (req.note) ndiag('warn', `requires: ${req.note}. Windows 1.26.65에서 이렇게 쓴 서버 폼 창은 Expected variable not found 경고를 34만 줄 넘게 남기고 게임이 멈췄다(실측)`);
     if (req.error || !truthy(req.value)) continue;
     node.appliedVariables.push(b.requires ?? '(always)');
     for (const [k, v] of Object.entries(b)) if (k.startsWith('$')) frame.declare(k, v);

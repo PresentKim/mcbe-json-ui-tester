@@ -833,8 +833,7 @@ export class Session {
     const p = btn.props;
     if (!btn.effVisible || btn.eff?.enabled === false) return { kind: 'toggle', msg: '잠긴 토글은 바뀌지 않는다' };
     const noOnOff = !p.toggle_on_button || !p.toggle_off_button;
-    if (this.opts.measured && noOnOff) return { kind: 'toggle', msg: 'toggle_on_button/toggle_off_button이 없어 눌리지 않는다(실측). 클라이언트 코드로는 토글 자신의 button_mappings만 있으면 눌리고 두 키는 enable_directional_toggling에서만 쓰인다(CN 모델이 이 규칙). 게임 확인 필요 [INP-11]' };
-    const note = noOnOff ? '. toggle_on_button/toggle_off_button이 없다: 클라이언트 코드로는 필요 없지만 실측에서는 없으면 눌리지 않았다(실측 우선 모델이 이 규칙). 게임 확인 필요 [INP-11]' : '';
+    const note = noOnOff ? '. toggle_on_button/toggle_off_button이 없어도 button_mappings만 있으면 바뀐다(Windows 1.26.65 실측, 클라이언트 코드와 같다). 두 키는 enable_directional_toggling에서만 쓰인다 [INP-11]' : '';
     const group = this.radioGroup(btn);
     if (group) {
       for (const m of group) m.bag?.set('#toggle_state', fromJson(m === btn));

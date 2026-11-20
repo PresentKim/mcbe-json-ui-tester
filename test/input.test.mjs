@@ -116,17 +116,15 @@ test('a radio toggle takes its index from the toggle_grid_collection_name item',
   assert.deepEqual(['t0', 't1', 't2'].map((n) => byName[n].eff.toggle_state), [true, false, false]);
 });
 
-test('a toggle without toggle_on_button stays put in measured mode and flips in CN mode (INP-11)', () => {
-  const bare = toggle({ toggle_on_button: '', toggle_off_button: '' });
-  const measured = run(panel([{ t: bare }]));
-  assert.match(measured.s.press(measured.byName.t).msg, /INP-11/);
-  measured.s.applyAll();
-  assert.equal(measured.byName.t.eff.toggle_state, false);
-  const cn = run(panel([{ t: bare }]), { measured: false });
-  assert.match(cn.s.press(cn.byName.t).msg, /INP-11/);
-  cn.s.applyAll();
-  assert.equal(cn.byName.t.eff.toggle_state, true);
-});
+for (const measured of [true, false]) {
+  test(`a toggle without toggle_on_button flips (INP-11, measured: ${measured})`, () => {
+    const bare = toggle({ toggle_on_button: '', toggle_off_button: '' });
+    const r = run(panel([{ t: bare }]), { measured });
+    assert.match(r.s.press(r.byName.t).msg, /INP-11/);
+    r.s.applyAll();
+    assert.equal(r.byName.t.eff.toggle_state, true);
+  });
+}
 
 test('a toggle without a mapping for the input is not pressed', () => {
   const { s, byName } = run(panel([{ t: toggle({ button_mappings: [] }) }]), { measured: false });
