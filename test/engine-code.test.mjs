@@ -24,6 +24,16 @@ const cases = [
 ];
 for (const [src, want] of cases) test(`engine evaluator: ${src}`, () => assert.equal(ev(src), want));
 
+test('a group with two operands is null and the rest still evaluates', () => {
+  assert.equal(ev("('G=' + (#n #n) + 0)"), 'Text("G=0")');
+  assert.equal(ev("('E=' + (1 AND 1) + 0)"), 'Text("E=0")');
+});
+
+test('unary plus before a group makes the whole expression null', () => {
+  assert.equal(ev("('U=' + (+(#n = 7)) + 0)"), 'Json(Null)');
+  assert.equal(ev("('U=' + (+'abc') + 0)"), 'Text("U=00")');
+});
+
 test('a variable holding #name reads the property where it stands', () => {
   assert.equal(ev('(#n + $v)', { $v: '#n' }), 'Int(14)');
 });

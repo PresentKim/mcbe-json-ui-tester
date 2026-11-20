@@ -223,12 +223,18 @@ class ExprError extends Error {}
 export function evaluate(src, ctx = {}) {
   const props = new Set(), vars = new Set(), hazards = new Set();
   const opts = { ...ctx.opts, hazards };
-  let toks;
+  let toks, brokenGroups = 0;
   try {
     toks = tokenize(src);
     if (toks.some((t) => t.t === 'err')) throw new ExprError('Invalid expression');
     let pos = 0;
     const peek = () => toks[pos];
+    const skipToGroupEnd = () => {
+      for (let depth = 0; pos < toks.length; pos++) {
+        if (toks[pos].t === '(') depth++;
+        else if (toks[pos].t === ')') { if (depth === 0) return; depth--; }
+      }
+    };
     const lookupProp = (name) => {
       props.add(name);
       if (!ctx.prop) return str(name);
@@ -242,13 +248,22 @@ export function evaluate(src, ctx = {}) {
       if (!t) throw new ExprError('Invalid expression');
       if (t.t === 'not') return bool(!truthy(operand()));
       if (t.t === 'op' && (t.v === '-' || t.v === '+')) {
+        if (t.v === '+' && peek()?.t === '(') throw new ExprError('Invalid expression');
         const v = operand();
         if (v.k === 'num') return t.v === '+' ? v : num(-v.v);
         const n = v.k === 'str' || v.k === 'json' ? 0 : numberOf(v);
         return int(t.v === '+' ? n : -n);
       }
       if (t.t === '(') {
-        const v = expression(99);
+        let v;
+        try {
+          v = expression(99);
+        } catch (e) {
+          if (!(e instanceof BrokenGroup)) throw e;
+          skipToGroupEnd();
+          brokenGroups++;
+          v = NULL;
+        }
         if (!peek() || peek().t !== ')') throw new ExprError('Invalid expression');
         pos++;
         return resolveHash(v);
@@ -270,21 +285,29 @@ export function evaluate(src, ctx = {}) {
       for (;;) {
         const t = peek();
         if (!t || t.t === ')') return left;
-        if (t.t !== 'op') throw new ExprError('Invalid expression'); // two operands in a row, e.g. `%`
+        if (t.t !== 'op') throw new BrokenGroup();
         const p = PREC[t.v];
         if (p > level) return left;
         pos++;
         left = applyBinary(t.v, left, expression(p - 1), opts);
       }
     }
-    const value = expression(99);
+    let value;
+    try {
+      value = expression(99);
+    } catch (e) {
+      if (!(e instanceof BrokenGroup)) throw e;
+      throw new ExprError('Invalid expression');
+    }
     if (pos !== toks.length) throw new ExprError('Invalid expression');
-    return { value: resolveHash(value), error: null, props, vars, hazards };
+    return { value: resolveHash(value), error: null, brokenGroups, props, vars, hazards };
   } catch (e) {
-    if (e instanceof ExprError) return { value: NULL, error: e.message, props, vars, hazards };
+    if (e instanceof ExprError) return { value: NULL, error: e.message, brokenGroups, props, vars, hazards };
     throw e;
   }
 }
+
+class BrokenGroup extends Error {}
 
 // Operators that do not exist in the language; reported as hints when an expression fails.
 export function lintExpression(src) {
