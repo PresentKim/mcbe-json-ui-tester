@@ -12,7 +12,7 @@ export const RENDERERS = [
   'flying_item_renderer', 'heart_renderer', 'horse_heart_renderer', 'armor_renderer', 'locator_bar', 'hunger_renderer', 'bubbles_renderer',
   'vignette_renderer', 'cursor_renderer', 'mob_effects_renderer', 'camera_renderer', '3d_structure_renderer', 'bohr_model_renderer',
   'web_view_renderer', 'actor_portrait_renderer', 'animated_gif_renderer', 'banner_pattern_renderer', 'profile_image_renderer',
-  'editor_volume_highlight_renderer', 'editor_compass_renderer', 'bundle_tooltip_renderer',
+  'editor_volume_highlight_renderer', 'editor_compass_renderer', 'bundle_tooltip_renderer', 'editor_gizmo_renderer', 'hotbar_slots_renderer',
 ];
 
 export const rendererOf = (node) => (node.props.type === 'custom' && RENDERERS.includes(node.props.renderer) ? node.props.renderer : null);
