@@ -1,56 +1,55 @@
 # MCBE JSON UI Tester
 
-마인크래프트 배드락 에디션 리소스팩의 JSON UI(`ui/*.json`)를 게임 없이 돌려 보는 실험 도구다. 바닐라 UI 위에 내 리소스팩을 얹어 화면을 그리고, 바인딩과 식을 계산하고, 엔진이 내는 오류 문구와 흔한 함정을 진단으로 보여 준다. 브라우저 GUI와 명령줄(`cli.mjs`) 두 가지로 쓴다.
+English | [한국어](./README.ko.md)
 
-**바로 써 보기: <https://presentkim.github.io/mcbe-json-ui-tester/>**
+An experimental tool that runs Minecraft Bedrock Edition resource pack JSON UI (`ui/*.json`) without the game. It stacks your resource pack on the vanilla UI, draws the screen, evaluates bindings and expressions, and reports engine error messages and common traps as diagnostics. It has a browser GUI and a command line (`cli.mjs`).
 
-> 기준 바닐라 v1.26.50.4(`Mojang/bedrock-samples` 커밋 `46ba6ea`). **이 도구의 결과는 게임 동작이 아니다.** 엔진 규칙을 문서와 분석에서 옮긴 모델이라, 규칙이 틀렸거나 아직 모르는 곳에서는 게임과 다르다. 최종 확인은 게임에서 한다.
+**Try it: <https://presentkim.github.io/mcbe-json-ui-tester/>**
 
-![가이드 레시피를 바닐라 서버 폼 위에서 돌린 화면. 집계 안 되는 버튼을 눌러 COL-04 응답이 뜨고, 진단 탭에 가려진 라벨 경고가 있다](./docs/server-form.jpg)
+> Vanilla baseline v1.26.50.4 (`Mojang/bedrock-samples` commit `46ba6ea`). **The results are not game behavior.** The engine rules come from documentation, decompiled client code and in-game measurements, so the tool differs from the game wherever a rule is wrong or still unknown. Check the final result in the game.
 
-## 1. 무엇을 하나
+![A guide recipe running on the vanilla server form. Pressing a button without a count shows the COL-04 answer, and the diagnostics tab lists a covered label](./docs/server-form.jpg)
 
-| 기능 | 내용 |
+## 1. What it does
+
+| Feature | Details |
 | --- | --- |
-| 바닐라 위에 내 팩 얹기 | 바닐라 `ui/` 207개 파일(정의 약 6,300개)을 읽고 내 팩을 팩 순서대로 병합한다. `modifications` 11개 연산, 같은 경로 병합, 경로 키(`"a/b/c"`)를 처리한다 |
-| 화면 재현 | 서버 폼(액션·모달), HUD, 상자 화면 등 바닐라 화면을 해석 오류 없이 만들고 바닐라 텍스처로 그린다 |
-| 흉내 데이터 | 폼 제목·본문·버튼, HUD 타이틀·액션바, 상자 칸을 넣어 화면 컨트롤러를 흉내 낸다 |
-| 버튼 누름 | 버튼을 누르면 엔진의 응답을 흉내 낸다. 버튼 자신에 `collection_details`가 있으면 "selection = N", 없으면 "canceled". 상자 칸의 `button.container_auto_place`는 바로 옮기고, 터치의 `button.container_take_all_place_all`은 첫 탭에 칸을 고르고 다음에 탭한 칸과 맞바꾼다(실측) |
-| 시간 흐름 | "다음 틱"으로 컨트롤 상태를 유지한 채 데이터를 다시 보내 `once`, `visibility_changed`(preserved title 래치)를 시험한다 |
-| 진단 | 엔진 오류 문구(`Must define a source property name in the binding!` 등)와 규칙 ID가 붙은 경고. 없는 연산자, `* 1` 숫자 변환, 문자열을 숫자로 나누는 식(Windows 1.26.65 멈춤), 컬렉션 바인딩의 `binding_name`에 쓴 식, 자기 `ignored`에 닿지 않는 `$변수`, 더 높은 레이어에 가려진 라벨, 조상 레이어 합이 94를 넘는 아이템·플레이어 렌더러, 숫자가 된 `#entity_id` 등 |
-| 검사 | 컨트롤 트리, 정의 사슬, 사각형, 레이어, 속성 주머니, 바인딩, `$` 변수 |
-| 식 실험 | 바인딩 식과 속성 주머니를 넣으면 값과 함정을 바로 보여 준다 |
-| 아이템 아이콘 | `inventory_item_renderer`의 `#item_id_aux`(숫자 ID × 65536 + 데이터)와 상자 칸의 `#item_renderer_data`를 바닐라 아이템 아이콘으로 그린다. 블록은 인벤토리처럼 윗면·옆면 세 면의 입체, 꽃·횃불 같은 것은 납작한 그림 |
+| Your pack over vanilla | Reads the 207 vanilla `ui/` files (about 6,300 definitions) and merges your packs in pack order. Handles the 11 `modifications` operations, same-path merging and path keys (`"a/b/c"`) |
+| Screens | Builds vanilla screens such as server forms (action and modal), the HUD and the chest screen and draws them with vanilla textures on one canvas |
+| Mock data | Feeds form titles, bodies and buttons, HUD titles and actionbars, and chest slots in place of the screen controller |
+| Button presses | Simulates the engine's answer: "selection = N" when the button has its own `collection_details`, otherwise "canceled". Follows the client rules for button and toggle states, hover, `consume_hover_events` and `button_mappings` |
+| Time | "Next tick" sends the data again while keeping control state, to test `once` and `visibility_changed`. "Play animations" runs animations in real time with the client's 32 easing functions, `next` chaining and button events |
+| Scrolling | Scroll views move with the mouse wheel; the scrollbar box length follows the client formula |
+| Localization | Label text is translated with the vanilla and pack `texts/<language>.lang` files |
+| Diagnostics | Engine error messages (`Must define a source property name in the binding!`, `Type '...' not recognized for control`, `Unrecognized renderer`, ...) and warnings tagged with rule IDs: missing operators, `* 1` number conversion, dividing a string by a number (freezes Windows 1.26.65), unset variables in `requires` (froze the game), labels covered by higher layers, and more |
+| Inspect | Control tree, definition chain, rect, layer, property bag, bindings, `$` variables |
+| Expressions | Type an expression and a property bag to see the value and its traps |
+| Item icons | Draws `#item_id_aux` (numeric ID × 65536 + data) of `inventory_item_renderer` and chest slots as vanilla item icons, blocks as isometric cubes |
 
-검증: 식 평가기는 Cinnabar(배드락 클라이언트 재구성) 평가기의 실행 결과 42건과 모두 같은 값을 내고, 크기 식도 16건이 같다. 실제 서버 팩(폼 레이아웃 13종, 버튼 93개짜리 분할 화면, 상자 기계 창, HUD 사이드바를 쓰는 리소스팩 5개 스택)을 해석 오류 없이 돌린다. 테스트는 198건이다.
+Checks: the expression evaluator agrees with all 42 results of the Cinnabar evaluator and the client rules measured on Windows 1.26.65.1; size expressions agree in 18 cases. Real server packs (13 form layouts, a 93 button split screen, a chest machine window, a HUD sidebar, 5 stacked resource packs) run without resolve errors. There are 206 tests.
 
-## 2. 쓰는 법
+## 2. Usage
 
-### 2.1 웹에서
+### 2.1 On the web
 
-<https://presentkim.github.io/mcbe-json-ui-tester/>를 연다. 바닐라 UI는 GitHub의 `Mojang/bedrock-samples`에서 받는다(처음에 UI 파일 207개, 텍스처는 쓸 때). "내 리소스팩 폴더 추가"로 리소스팩 루트 폴더(`ui/`, `textures/`가 있는 곳)를 고른다. 내 팩 파일은 브라우저 밖으로 나가지 않는다.
+Open <https://presentkim.github.io/mcbe-json-ui-tester/>. Vanilla UI comes from `Mojang/bedrock-samples` on GitHub (207 UI files first, textures when used). "Add my resource pack folder" picks your pack root (the folder with `ui/` and `textures/`). Your pack files never leave the browser.
 
-| 영역 | 하는 일 |
+| Area | Purpose |
 | --- | --- |
-| 위 막대 | 엔진 모델(실측 우선 / CN 그대로), 플랫폼 변수(데스크톱 / 휴대폰), 화면 크기, 배율, 윤곽·숨은 컨트롤 보기, "모르는 전역 `#visible`을 false로" |
-| 왼쪽 "팩" | 바닐라, 내 리소스팩 폴더, 예제 팩을 넣고 순서를 바꾼다(위가 먼저 병합) |
-| 왼쪽 "파일" | 읽은 UI 파일을 고쳐 바로 적용한다(Ctrl+Enter) |
-| 가운데 | 화면. 컨트롤을 누르면 고르고, 버튼·토글이면 엔진의 응답을 흉내 낸다. 마우스를 올리면 호버 상태가 된다 |
-| "처음부터 다시" / "다음 틱" | 트리를 새로 만든다 / 컨트롤 상태를 유지한 채 호스트 데이터를 다시 보낸다 |
-| "애니메이션 재생" | 애니메이션 시간을 실제 시간으로 흘리고 멈춘다. 옆에 흐른 시간이 나온다 |
-| 오른쪽 "호스트" | 화면에 줄 데이터: 서버 폼, HUD, 상자, 직접 JSON(`globals`, `collections`, `factories`, `hostVars`) |
-| 오른쪽 "검사"·"진단"·"식 실험" | 위 1절 |
+| Top bar | UI language (English by default, Korean available, saved in the browser), engine model (measured first / CN as is), platform variables (desktop / phone), game language (English by default), screen size, zoom, outlines, hidden controls, "unknown global `#visible` = false" |
+| Left "Packs" | Add vanilla, your pack folders and the sample pack and reorder them (top merges first) |
+| Left "Files" | Edit a loaded UI file and apply it (Ctrl+Enter) |
+| Center | The screen. Click to pick a control; buttons and toggles answer like the engine. Hover sets the hover state |
+| "Start over" / "Next tick" / "Play animations" | Rebuild the tree / send the host data again / run animation time |
+| Right "Host" | Data for the screen: server form, HUD, chest, or raw JSON (`globals`, `collections`, `factories`, `hostVars`) |
+| Right "Inspect", "Diagnostics", "Expressions" | See section 1 |
 
-엔진 모델 두 가지:
+Two engine models:
 
-- **실측 우선**(기본): 게임에서 잰 기록이 재구성 코드와 다르면 실측을 따른다. 예: `#`가 없는 view 식은 그 컨트롤의 `bindings` 전체를 버린다, 다른 경로 파일의 `modifications`는 바닐라에 닿지 않는다, `variables` 대상 `modifications`는 무시된다(MOD-03), 고정 `grid_dimensions` 격자는 폭을 칸 수로 나눈 간격에 칸을 놓는다(LAY-41), 바인딩 식 안의 `$container_title`은 치환하지 않는다(HOST-19).
-- **CN 그대로**: Cinnabar 재구성 엔진의 규칙을 그대로 쓴다.
+- **Measured first** (default): where an in-game measurement differs from code or reconstruction, follow the measurement.
+- **CN as is**: follow the rules of the Cinnabar reconstruction and the client code.
 
-"식 실험" 칸은 실측 우선 모델에서 문자열 리터럴을 `'%.Ns'`로 자르지 않는다(EXP-10). 이 실측이 실은 `#`가 없는 view 식이 버려진 것(BND-05)이었을 수 있다는 충돌 C-42가 있어 화면 트리에는 쓰지 않는다.
-
-두 모델 모두 식 안에 끼운 `$변수`(바인딩 식, `variables` 블록 식)를 값의 글자 그대로 치환한다(BND-33, 모바일 1.26.63 실측). 값은 식으로 다시 해석되지 않으므로 따옴표까지 넣은 값(`"'§0§3§r'"`)은 따옴표가 글자로 들어가고, 식을 담은 변수를 다른 식에 끼우면 그 식은 계산되지 않고 글자로 붙는다. 라벨은 글자 값만 그린다. 정수·실수를 `#text`에 바로 넣으면 아무것도 나오지 않고, `('§r' + 정수)`처럼 글자를 붙이면 숫자가 나온다.
-
-### 2.2 내 컴퓨터에서
+### 2.2 Locally
 
 ```bash
 git clone https://github.com/PresentKim/mcbe-json-ui-tester
@@ -58,88 +57,87 @@ cd mcbe-json-ui-tester
 node serve.mjs            # http://localhost:5178
 ```
 
-내 팩을 폴더 선택 없이 바로 띄우려면 아래쪽 팩부터 `--pack`으로 준다(뒤에 준 팩이 이긴다).
+To open your packs without picking folders, pass them with `--pack`, bottom pack first (later packs win).
 
 ```bash
 node serve.mjs 5180 --pack ../packs/theme --pack ../packs/server
 ```
 
-저장해 둔 시험을 주소로 바로 띄울 수 있다. `?scenario=<JSON 주소>`는 `{ root, host, screen: {w, h}, zoom, mode, platform, language, items }`을 불러오고, `&view=stage`를 붙이면 화면만 왼쪽 위에 그려 게임 스크린숏과 픽셀로 맞대기 좋다. `--static <폴더>`는 그 폴더를 `/static/`으로 내어 준다.
+A saved test opens from the address: `?scenario=<JSON URL>` loads `{ root, host, screen: {w, h}, zoom, mode, platform, language, items }`, and `&view=stage` draws only the screen at the top left for pixel comparison with game screenshots. `--static <folder>` serves that folder at `/static/`.
 
 ```bash
 node serve.mjs 5181 --static ./scenarios
 # http://localhost:5181/?scenario=/static/research.json&view=stage
 ```
 
-게임 창이 1920×1009이고 GUI 배율이 4면 화면은 480×253이다. 게임은 창 크기를 배율로 나눈 값을 올림한다(실측: 높이가 다른 폼 열 개의 창 위치가 모두 253일 때만 픽셀까지 맞았다).
+A 1920×1009 game window at GUI scale 4 is a 480×253 screen (the game rounds the window size divided by the scale up).
 
-`items`는 서버가 클라이언트에 보내는 아이템 목록을 흉내 낸다. `{ "<숫자 ID>": { name, block?: { textures: { up, west, south, "*", <material instance> … }, geometry? } } }`로 서버 아이템의 이름과 커스텀 블록의 면 텍스처 키(모델이면 material instance 이름이 키)를 주면, 실린 팩의 `item_texture.json`(이름이 키), `terrain_texture.json`, `models/`에서 그림과 모델을 찾는다. 서버 아이템의 숫자 ID는 서버가 정하므로 폼과 같은 실행에서 뽑아야 한다.
+`items` mocks the item list a server sends: `{ "<numeric ID>": { name, block?: { textures: { up, west, south, "*", <material instance> … }, geometry? } } }`. Icons and models are looked up in the loaded packs' `item_texture.json`, `terrain_texture.json` and `models/`.
 
-`serve.mjs`는 옆 폴더의 `bedrock-samples/resource_pack`(`../bedrock-samples` 또는 `../../bedrock-samples`)을 찾아 바닐라를 바로 불러온다. 다른 위치면 `VANILLA=<resource_pack 경로>`를 준다. 찾지 못하면 웹과 같이 GitHub에서 받는다(`node serve.mjs 5179 --no-vanilla`로 이 상태를 일부러 볼 수 있다). 외부 패키지는 필요 없다(Node 20+).
+`serve.mjs` finds `bedrock-samples/resource_pack` next to the repository (`../bedrock-samples` or `../../bedrock-samples`) and loads vanilla from it. Set `VANILLA=<resource_pack path>` for another place. Without it, vanilla comes from GitHub as on the web (`node serve.mjs 5179 --no-vanilla` shows that state). No packages are needed (Node 20+).
 
-### 2.3 명령줄
+### 2.3 Command line
 
 ```bash
-node cli.mjs --vanilla ../bedrock-samples/resource_pack --pack ./my_rp --root server_form.third_party_server_screen --title "myui:v1 상점" --buttons "사과;빵"
+node cli.mjs --vanilla ../bedrock-samples/resource_pack --pack ./my_rp --root server_form.third_party_server_screen --title "myui:v1 Shop" --buttons "Apple;Bread"
 ```
 
-진단과 보이는 라벨(글자, 위치)을 찍고, `error` 진단이 있으면 종료 코드 1을 낸다. `--json`이면 JSON으로, `--cn`이면 CN 모델로, `--host hud --hud-title T --actionbar A`면 HUD로 돈다. `--sample`은 내장 예제 팩을 얹는다. AI 에이전트나 CI가 리소스팩을 고친 뒤 정적 시뮬레이션으로 쓸 수 있다.
+Prints the diagnostics and the visible labels (text and position) and exits with 1 when there is an `error` diagnostic. `--json` prints JSON, `--cn` uses the CN model, `--host hud --hud-title T --actionbar A` runs the HUD, `--sample` adds the built-in sample pack, `--language ko_KR` picks the game language and `--ui-lang ko` prints Korean messages. It works as a static check for AI agents or CI after editing a pack.
 
-### 2.4 테스트
+### 2.4 Tests
 
 ```bash
 npm test
 ```
 
-198건이다. `node:test`로 돈다. 클라이언트 코드에서 읽은 규칙은 `engine-code`, `layout-code`, `controls`, `anim`, `text`, `input`, `render-rules`, `lang` 테스트에 있다.
+206 tests on `node:test`. Rules read from the client code are in the `engine-code`, `layout-code`, `controls`, `anim`, `text`, `input`, `render-rules` and `lang` tests; `i18n` checks that every page and diagnostic message has a Korean translation.
 
-## 3. 규칙 ID와 근거
+## 3. Rule IDs and sources
 
-진단과 코드 주석의 `[EXP-16]`, `[COL-04]` 같은 ID는 지은이가 정리한 한국어 JSON UI 가이드(비공개 연구 저장소)의 규칙 번호다. 장 약어는 `FILE` 파일·정의, `MOD` 바닐라 화면 수정, `LAY` 레이아웃, `BND` 바인딩, `EXP` 식, `COL` 컬렉션·팩토리, `INP` 입력·버튼·토글, `TXT` 텍스트, `ANI` 이미지·애니메이션, `HOST` 화면 호스트, `PAT` 패턴, `DBG` 디버깅이다. 근거는 다음을 교차 검증한 것이다.
+IDs such as `[EXP-16]` and `[COL-04]` in diagnostics are rule numbers of the author's Korean JSON UI guide (a private research repository). Chapters: `FILE` files and definitions, `MOD` modifying vanilla screens, `LAY` layout, `BND` bindings, `EXP` expressions, `COL` collections and factories, `INP` input, buttons and toggles, `TXT` text, `ANI` images and animation, `HOST` screen hosts, `PAT` patterns, `DBG` debugging. The sources are:
 
-| 약어 | 근거 |
+| Short | Source |
 | --- | --- |
-| 실측 | 게임 안 측정 기록(bedrock-core 저자의 실측, 지은이의 서버 실측) |
-| 바닐라 | 바닐라 리소스팩 v1.26.50.4 `ui/` 전수 검색 |
-| `CN` | Cinnabar(`cinnabar-mc/cinnabar`)의 JSON UI 재구성 엔진 코드와 그 평가기 실행 결과. 이 도구에 Cinnabar 코드는 들어 있지 않다(동작 규칙만 다시 구현) |
-| `NB` | Android 1.26.52.3 클라이언트 바이너리에서 확인한 엔진 키와 오류 문구 |
-| 클라이언트 코드 | Android 1.26.52.3과 Windows 1.26.65.1 클라이언트를 역컴파일해 읽은 식 평가기, 바인딩, 레이아웃, 컨트롤 종류, 애니메이션, 글자, 입력, 이미지 그리기 규칙. 게임 안 실측과 다르면 "실측 우선" 모드는 실측을, "CN 그대로" 모드는 코드 규칙을 쓴다 |
-| 커뮤니티 | Bedrock Wiki, Bedrock OSS·Bedrock Add-Ons 디스코드 |
+| Measured | In-game measurements (bedrock-core author's, the author's server and Windows 1.26.65.1 measurements) |
+| Vanilla | Full search of the vanilla resource pack v1.26.50.4 `ui/` |
+| `CN` | The JSON UI reconstruction in Cinnabar (`cinnabar-mc/cinnabar`) and its evaluator results. No Cinnabar code is included; only the behavior rules are reimplemented |
+| Client code | Expression evaluator, bindings, layout, control types, animation, text, input and image drawing rules read from the decompiled Android 1.26.52.3 and Windows 1.26.65.1 clients |
+| Community | Bedrock Wiki, Bedrock OSS and Bedrock Add-Ons Discord servers |
 
-## 4. 한계
+## 4. Limits
 
-- **게임이 아니다.** 두 엔진 모델 모두 틀릴 수 있다. 근거끼리 갈리는 곳은 진단에 "게임 확인 필요"로 적는다.
-- **엔진 렌더러는 그리지 않는다.** `live_player_renderer`, `live_horse_renderer` 등은 자리표시뿐이라 아래 실측(모바일 1.26.63, 상자 화면)은 진단으로만 알린다. `inventory_item_renderer` 아이콘과 `live_player_renderer`는 팩 창 안의 조상 레이어 합이 94까지는 그려지고 99부터 그려지지 않았다(95~98은 시험하지 않음, ANI-38). 이 도구의 레이어 합은 바닐라 조상까지 더한 값이라 실측의 합보다 크다. `live_horse_renderer`는 합과 상관없이 그려졌다. `live_player_renderer`는 로컬 플레이어만 그린다. `live_horse_renderer`의 `#entity_id`는 큰따옴표로 감싼 칸 이름(`"<id>"`)에서 읽은 글자면 그려지고, 숫자만 있는 이름은 정수로 바뀌어(EXP-30) 그려지지 않는다. 커스텀 엔티티는 발끝이 컨트롤 가운데에, 플레이어는 머리가 컨트롤 위끝 가까이에 오며, 커스텀 엔티티 컨트롤을 크기의 1.35배만큼 내리면 플레이어와 같은 자리가 된다.
-- **상자 칸 흉내**: `#inventory_stack_count`는 개수 0과 1이면 빈 글자, 2~64면 숫자 글자다. 칸에 최대 내구도를 주면 `#item_durability_total_amount`, `#item_durability_current_amount` 둘 다 그 값을 실수로 준다(실측: 두 바인딩 모두 최대 내구도였다). 닳은 내구도는 흉내 내지 않는다.
-- **엔진 데이터는 흉내다.** 화면 컨트롤러가 주는 바인딩은 `src/engine/host.js`의 일부만 있다. 모르는 전역값은 없음(또는 `#visible` false)으로 본다. 종이 인형, 입력 포커스 이동, 소리는 흉내 내지 않는다(아이템과 `gradient_renderer`가 아닌 엔진 렌더러는 "윤곽"을 켜면 자리표시로 보인다). 스크롤은 휠로 움직이지만 휠 한 칸의 이동량은 게임에서 재지 못했다(측정 도구의 휠 입력을 게임이 받지 않았다). 스크롤 상자 길이 `올림(트랙 × 뷰포트/내용)`은 실측과 같다. 바닐라 상자 칸의 잠금 표시와 초록 강조처럼 엔진 전역값(`#using_touch` 등)에 기대는 겹침 이미지는 흉내 데이터가 없어 보일 수 있다.
-- **애니메이션**: `src/engine/anim.js`가 Windows 1.26.65.1 클라이언트 코드에서 읽은 규칙(easing 32개, `alpha`·`clip`·`color`·`uv`·`offset`·`size`·`flip_book`·`wait`, `next`와 넘친 시간, `play_event`·`reset_event`·`animation_reset_name`, `end_event`, `destroy_at_end`)으로 돌린다. 게임 안 실측은 아니다. 버튼을 누르면 `to_button_id`가 버튼 이벤트로 가고, `end_event`도 같은 화면에 다시 보낸다. 화면이 주는 `$title_fade_in_time` 같은 변수는 흉내 내지 않아 정해지지 않은 `duration`은 기본 1초다. `aseprite_flip_book`(사이드카 형식 모름), 첫 프레임 빨리 감기(`disable_anim_fast_forward`), 화면 진입·퇴장 이벤트는 없다.
-- **아이템 아이콘**: `data/item-atlas.json`(바닐라 1.26.50.4, 1,623개 중 1,538개에 텍스처)으로 숫자 ID를 아이콘에 잇는다. 텍스처가 없는 85개(새 스폰 알, 음반, 하네스 등)는 이름만 보인다. 숫자 ID는 버전과 커스텀 아이템 수에 따라 밀리므로(ANI-06) 다른 버전·서버에서는 다른 아이템이 보일 수 있다. 서버 아이템은 시나리오의 `items`로 잇는다(위 2.2). 아이콘은 렌더러 칸을 가득 채운다(22px 칸이면 22px). 블록은 게임에서 잰 카메라(45° 돌리고 30° 숙인 정사영, 정육면체 폭이 아이콘의 7/8)로 정육면체·반 블록·판유리 모양을 그린다. 서버 블록의 자체 모델(`models/**/*.geo.json`의 bone·cube·회전·면별/박스 UV·material instance)도 그린다(`src/engine/geometry.js`). 게임에서 잰 대로 모델은 경계 구의 크기에 맞춰 키워 가운데 두고(14×15×14 체는 1.12배), 정육면체 블록과 반 바퀴 돌아 보이며(모델의 north 면이 오른쪽), 서버 블록은 옆면을 어둡게 하지 않는다. 바닐라 블록의 옆면 밝기는 왼쪽 0.73, 오른쪽 0.5다(실측). 왼쪽 면이 east인지 거울에 비친 west인지는 좌우가 같은 모델밖에 없어 확인하지 못했다. 면은 깊이 순서로 그려 서로 파고드는 큐브는 틀릴 수 있다. 계단·울타리 같은 바닐라 모델, 마법 부여 반짝임, 내구도 막대는 없다.
-- **글자**: 줄바꿈과 글자 폭은 게임 글꼴의 폭표(`data/font-metrics.json`)로 잰다. 위쪽 "게임 언어"가 한국어면(기본) 한글 등 ASCII 밖 글자가 섞인 글은 ASCII도 유니코드 글꼴(`glyph_00`) 폭을 쓰고, ASCII만 있는 글은 `default8`을 쓴다(게임 실측). 영어면 ASCII는 늘 `default8`이다. 글자 모양은 브라우저 글꼴이라 획이 게임보다 1px쯤 위로 올라오고, 한 글자 안에서 1px쯤 어긋날 수 있다. 라벨 글은 바닐라와 팩의 `texts/<게임 언어>.lang`으로 번역한다(`%` 토큰 규칙은 클라이언트 코드). `font_size`는 `small` 0.5, `normal` 1, `large` 2, `extra_large` 4배이고 `medium`은 `normal`이다(Windows 1.26.65.1 실측, 클라이언트 표와 같다).
-- **텍스처**: PNG·JPG만 그린다. 클라이언트는 `.tga`를 먼저 찾으므로 TGA만 있으면 그리지 않고, 옆에 PNG·JPG가 있으면 그것을 대신 그린다. 화면은 캔버스 하나에 그린다. 틴트는 텍스처에 색을 곱하는 것이라 게임 색과 조금 다를 수 있다. `grayscale`은 브라우저의 휘도 계산을 쓴다.
-- **크래시와 멈춤은 흉내 내지 않는다.** 문자열을 숫자로 나누는 식(EXP-49, Windows 1.26.65 멈춤), 컬렉션 바인딩의 `binding_name`에 쓴 식(BND-37, 멈춤), 크기 바인딩에 숫자가 아닌 값(크래시라는 커뮤니티 보고)은 진단으로만 알리고 값은 계속 계산한다. 문자열 `/` 숫자의 값은 CN 실행 결과(1)를 따른다.
-- **버전**: 바닐라 1.26.50.4 구조 기준이다. 다른 버전의 바닐라 폴더를 넣으면 그 구조로 돈다.
+- **It is not the game.** Both engine models can be wrong. Where sources disagree, the diagnostic says that a game check is needed.
+- **Engine renderers**: besides item icons and `gradient_renderer`, engine renderers (`live_player_renderer`, `paper_doll_renderer`, ...) are placeholders, shown with "Outlines". Known in-game results about them are reported as diagnostics.
+- **Engine data is mocked.** Only part of the screen controller bindings exist in `src/engine/host.js`; unknown globals are absent (or `#visible` false). Focus movement, modal input blocking, screen stacks and sounds are not simulated. Overlays that depend on engine globals such as `#using_touch` may show in the chest screen. The distance of one wheel notch was not measured.
+- **Animation** follows the client code; `aseprite_flip_book`, the first frame fast-forward and screen entrance events are missing.
+- **Text**: line breaks and widths use the game font's advance table (`data/font-metrics.json`). Glyph shapes come from the browser font. `font_size` is 0.5, 1, 2 and 4 times for `small`, `normal`, `large` and `extra_large`; `medium` is `normal` (measured).
+- **Textures**: PNG and JPG only. The client tries `.tga` first, so a TGA-only texture is not drawn; a PNG or JPG next to it is drawn instead.
+- **Crashes and freezes are not simulated**; they are reported as diagnostics.
+- **Version**: based on vanilla 1.26.50.4. Another vanilla folder runs with its structure.
 
-## 5. 구조
+## 5. Layout of the code
 
-| 파일 | 하는 일 | 근거 규칙 |
-| --- | --- | --- |
-| `src/engine/expr.js` | 토큰, 우선순위, 타입별 연산, 결과 재해석, 사전 조회, 함정 검사 | EXP-*, CN-26~30 |
-| `src/engine/jsonc.js` | jsoncpp 규칙(주석 허용, 뒤따르는 쉼표·따옴표 없는 키는 오류, 오류 앞까지 로드) | FILE-30 |
-| `src/engine/size.js` | 크기 식 | LAY-03, LAY-34~37 |
-| `src/engine/catalog.js` | `_ui_defs` 정렬 로드, 같은 경로 병합, 경로 키, `modifications` 11개 연산 | FILE-20~22, MOD-* |
-| `src/engine/resolve.js` | `@` 상속, `$` 스코프(확정값 우선), `variables`, `ignored`(부모 스코프, 가장 먼저) | FILE-*, NB |
-| `src/engine/bind.js` | 속성 주머니, 팩토리·그리드·컬렉션, global/collection/view 바인딩, `binding_condition` 틱, 버튼·토글 상태, 누름 흉내 | BND-*, COL-*, INP-* |
-| `src/engine/anim.js` | 애니메이션 정의, easing, 컨트롤별 진행, 버튼 이벤트, `next`·`destroy_at_end` | ANI-* |
-| `src/engine/layout.js` | 크기, 앵커, 스택(숨은 자식 공간 없음), 그리드, 레이어, 클리핑, 가려짐 검사 | LAY-* |
-| `src/engine/host.js` | 서버 폼, HUD, 상자 화면 흉내 데이터 | HOST-* |
-| `src/render.js`, `src/app.js`, `index.html`, `app.css` | 브라우저 GUI | — |
-| `samples/sample-pack.js` | 예제 팩: 커스텀 액션 폼(PAT-01·02), preserved title, 바닐라 없이 도는 놀이터(`demo.playground`) | PAT-01~02, BND-18 |
-| `data/item-atlas.json`, `tools/build-item-atlas.mjs` | 숫자 아이템 ID → 아이콘 텍스처 표와 그것을 바닐라 샘플(`metadata/vanilladata_modules/mojang-items.json`, `item_texture.json`, `blocks.json`, `terrain_texture.json`)에서 만드는 스크립트 | ANI-06 |
-| `src/engine/font.js`, `data/font-metrics.json`, `tools/build-font-metrics.mjs` | 글자 폭과 줄바꿈. 폭표는 설치된 게임의 `font.brarchive`(`default8.png`, `glyph_XX.png`)에서 글자마다 왼쪽·오른쪽 열만 뽑은 숫자다(글꼴 그림은 넣지 않는다) | TXT-* |
-| `src/engine/geometry.js` | 블록 모델(geo.json)을 아이콘이 보는 면으로 바꾸기: 회전, 보이는 면, 깊이 순서, 경계 구 맞춤 | ANI-06 |
-| `cli.mjs`, `serve.mjs` | 명령줄, 로컬 서버 | — |
-| `.github/workflows/pages.yml` | `main`에 올 때마다 테스트 후 GitHub Pages 배포 | — |
+| File | Purpose |
+| --- | --- |
+| `src/engine/expr.js` | Tokens, precedence, typed operators, result reinterpretation, traps |
+| `src/engine/jsonc.js` | jsoncpp rules (comments allowed, trailing commas and unquoted keys are errors, members before an error are kept) |
+| `src/engine/size.js` | Size expressions |
+| `src/engine/catalog.js` | Sorted `_ui_defs` loading, same-path merging, path keys, the 11 `modifications` operations |
+| `src/engine/resolve.js` | `@` inheritance, `$` scopes, `variables`, `ignored`, control type and renderer checks |
+| `src/engine/bind.js` | Property bags, factories, grids, collections, global/collection/view bindings, `binding_condition`, button and toggle states, presses |
+| `src/engine/anim.js` | Animation definitions, easing, per-control progress, button events, `next`, `destroy_at_end` |
+| `src/engine/layout.js` | Sizes, anchors, stack panels, grids, layers, clipping, scrolling, layout diagnostics |
+| `src/engine/host.js` | Mock data for server forms, the HUD and the chest screen |
+| `src/engine/lang.js` | `.lang` files and label localization |
+| `src/render.js`, `src/app.js`, `index.html`, `app.css` | Browser GUI (canvas renderer with a DOM overlay for inspection) |
+| `src/i18n.js`, `src/locales/ko.js` | Page and diagnostic messages; English text is the key, Korean is a catalog |
+| `samples/sample-pack.js` | Sample pack: custom action form, preserved title, a playground that runs without vanilla (`demo.playground`) |
+| `data/item-atlas.json`, `tools/build-item-atlas.mjs` | Numeric item ID to icon texture table and the script that builds it from vanilla samples |
+| `src/engine/font.js`, `data/font-metrics.json`, `tools/build-font-metrics.mjs` | Text widths and line breaks from the installed game's font advances (no glyph images are included) |
+| `src/engine/geometry.js` | Block models (geo.json) to icon faces |
+| `cli.mjs`, `serve.mjs` | Command line and local server |
+| `.github/workflows/pages.yml` | Tests and GitHub Pages deploy on every push to `main` |
 
-## 6. 바닐라 파일
+## 6. Vanilla files
 
-이 저장소에는 바닐라 파일이 없다. 웹 버전은 실행할 때 `Mojang/bedrock-samples`에서 받고, 로컬에서는 사용자가 가진 사본을 읽는다. `docs/`의 스크린샷에는 바닐라 UI 텍스처가 찍혀 있다.
+This repository contains no vanilla files. The web version downloads them from `Mojang/bedrock-samples` at run time, and locally the tool reads your own copy. Screenshots in `docs/` show vanilla UI textures.
