@@ -10,6 +10,7 @@ import { evaluate, show, fromJson, lintExpression } from './engine/expr.js';
 import { serverFormHost, hudHost, chestHost, mergeHost, PLATFORMS, SCREENS } from './engine/host.js';
 import { renderTree, stagePoint } from './render.js';
 import { SAMPLE_PACK, SAMPLE_FORM } from '../samples/sample-pack.js';
+import { t, setLocale, getLocale, LOCALES } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 window.__tester = null;
@@ -28,12 +29,33 @@ for (const nav of document.querySelectorAll('.tabs')) {
 const showTab = (name) => document.querySelector(`.tabs button[data-tab="${name}"]`)?.click();
 
 function toast(msg) {
-  const t = $('toast');
-  t.textContent = msg;
-  t.hidden = false;
+  const box = $('toast');
+  box.textContent = msg;
+  box.hidden = false;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { t.hidden = true; }, 4000);
+  toast.timer = setTimeout(() => { box.hidden = true; }, 4000);
 }
+
+const UI_LANG_KEY = 'mcbe-json-ui-tester.uiLang';
+function savedUiLang() {
+  try { return localStorage.getItem(UI_LANG_KEY); } catch { return null; }
+}
+function applyUiLanguage(code) {
+  setLocale(code);
+  document.documentElement.lang = getLocale();
+  for (const el of document.querySelectorAll('[data-i18n]')) { el.dataset.en ??= el.textContent; el.textContent = t(el.dataset.en); }
+  for (const el of document.querySelectorAll('[data-i18n-html]')) { el.dataset.enHtml ??= el.innerHTML; el.innerHTML = t(el.dataset.enHtml); }
+  for (const el of document.querySelectorAll('[data-i18n-title]')) el.title = t(el.dataset.i18nTitle);
+}
+for (const [code, name] of Object.entries(LOCALES)) $('uiLang').append(new Option(name, code));
+$('uiLang').value = savedUiLang() in LOCALES ? savedUiLang() : 'en';
+applyUiLanguage($('uiLang').value);
+$('uiLang').addEventListener('change', () => {
+  try { localStorage.setItem(UI_LANG_KEY, $('uiLang').value); } catch { }
+  applyUiLanguage($('uiLang').value);
+  renderAnimClock();
+  rebuild();
+});
 
 // ---------- packs ----------
 const UI_EXT = /\.(json|r4ui|uidx)$/i;
@@ -87,7 +109,7 @@ async function loadFolder(fileList, vanilla) {
     else if ((rel.startsWith('textures/') || rel.startsWith('models/')) && rel.endsWith('.json')) entries.push({ rel, text: await f.text() });
     else if (LANG_FILE.test(rel)) entries.push({ rel, blob: f });
   }
-  if (!entries.length) { toast('ui/ 또는 textures/ 폴더가 없다. 리소스팩 루트 폴더를 고른다.'); return; }
+  if (!entries.length) { toast(t('No ui/ or textures/ folder. Pick the resource pack root folder.')); return; }
   const pack = packFromEntries(vanilla ? `vanilla (${packName})` : packName, entries, vanilla);
   if (vanilla) state.packs = [pack, ...state.packs.filter((p) => !p.vanilla)];
   else state.packs.push(pack);
@@ -105,9 +127,9 @@ async function loadVanillaFromServer() {
     const pack = packFromEntries('vanilla 1.26.50.4 (bedrock-samples)', entries, true);
     state.packs = [pack, ...state.packs.filter((p) => !p.vanilla)];
     afterPacksChanged();
-    toast(`바닐라 UI 파일 ${Object.keys(pack.files).length}개를 읽었다`);
+    toast(t('Read {count} vanilla UI files', { count: Object.keys(pack.files).length }));
   } catch (e) {
-    toast('로컬 서버에서 바닐라를 못 읽었다. "바닐라 폴더 고르기"를 쓴다(node serve.mjs로 띄우면 자동).');
+    toast(t('Could not read vanilla from the local server. Use "Pick vanilla folder" (automatic when started with node serve.mjs).'));
   }
 }
 
@@ -117,7 +139,7 @@ const VANILLA_RAW = `https://raw.githubusercontent.com/Mojang/bedrock-samples/${
 
 async function loadVanillaFromGitHub() {
   try {
-    toast('GitHub에서 바닐라 UI 목록을 받는 중');
+    toast(t('Getting the vanilla UI list from GitHub'));
     const defsText = await (await fetch(VANILLA_RAW + 'ui/_ui_defs.json')).text();
     const list = parseUiDefsList(defsText);
     const want = ['ui/_ui_defs.json', 'ui/_global_variables.json', ...list];
@@ -130,7 +152,7 @@ async function loadVanillaFromGitHub() {
         const r = await fetch(VANILLA_RAW + rel);
         if (r.ok) entries.push({ rel, text: await r.text() });
         done++;
-        if (done % 20 === 0) toast(`GitHub에서 바닐라 받는 중 ${done}/${want.length}`);
+        if (done % 20 === 0) toast(t('Getting vanilla from GitHub {done}/{total}', { done, total: want.length }));
       }
     };
     await Promise.all(Array.from({ length: 12 }, worker));
@@ -139,9 +161,9 @@ async function loadVanillaFromGitHub() {
     state.packs = [pack, ...state.packs.filter((p) => !p.vanilla)];
     $('rootRef').value = 'server_form.third_party_server_screen';
     afterPacksChanged();
-    toast(`바닐라 UI 파일 ${Object.keys(pack.files).length}개를 GitHub에서 읽었다. 텍스처는 쓸 때 받는다`);
+    toast(t('Read {count} vanilla UI files from GitHub. Textures are fetched when used', { count: Object.keys(pack.files).length }));
   } catch (e) {
-    toast('GitHub에서 바닐라를 못 받았다. "바닐라 폴더 고르기"를 쓴다.');
+    toast(t('Could not get vanilla from GitHub. Use "Pick vanilla folder".'));
   }
 }
 
@@ -177,15 +199,15 @@ function renderPackList() {
     const li = document.createElement('li');
     li.innerHTML = `<b></b> <span class="meta"></span> `;
     li.querySelector('b').textContent = p.name;
-    li.querySelector('.meta').textContent = `UI ${Object.keys(p.files).length} · 텍스처 ${p.textures.size}`;
+    li.querySelector('.meta').textContent = t('UI {ui} · textures {tex}', { ui: Object.keys(p.files).length, tex: p.textures.size });
     const up = document.createElement('button'); up.textContent = '↑'; up.disabled = i === 0;
     up.onclick = () => { [state.packs[i - 1], state.packs[i]] = [state.packs[i], state.packs[i - 1]]; afterPacksChanged(); };
-    const rm = document.createElement('button'); rm.textContent = '빼기';
+    const rm = document.createElement('button'); rm.textContent = t('Remove');
     rm.onclick = () => { state.packs.splice(i, 1); afterPacksChanged(); };
     li.append(up, rm);
     ol.append(li);
   });
-  if (!state.packs.length) ol.innerHTML = '<li class="hint">팩이 없다. 예제 팩이나 바닐라를 넣는다.</li>';
+  if (!state.packs.length) ol.innerHTML = `<li class="hint">${t('No packs. Add the sample pack or vanilla.')}</li>`;
 }
 
 function renderFileSelect() {
@@ -215,14 +237,14 @@ function loadFileIntoEditor() {
   if (!v) { $('fileEditor').value = ''; return; }
   const [pi, f] = v.split('::');
   $('fileEditor').value = state.packs[+pi].files[f];
-  $('fileStatus').textContent = state.packs[+pi].vanilla ? '바닐라 파일(고쳐도 이 탭에서만 바뀜)' : '';
+  $('fileStatus').textContent = state.packs[+pi].vanilla ? t('Vanilla file (edits only change it in this tab)') : '';
 }
 function applyFile() {
   const v = $('fileSelect').value;
   if (!v) return;
   const [pi, f] = v.split('::');
   state.packs[+pi].files[f] = $('fileEditor').value;
-  $('fileStatus').textContent = '적용함';
+  $('fileStatus').textContent = t('Applied');
   rebuild();
 }
 
@@ -325,7 +347,7 @@ function serverItem(id) {
       // the icon shows the top, the west side on the left and the front (south) on the right
       const top = face('up', '*'), left = face('west', '*'), right = face('south', '*');
       // a model the packs do not have is drawn as a cube of the block's textures
-      if (top || left) entry = { n: it.name + (it.block.geometry ? ` (${it.block.geometry} 없음: 정육면체로 그림)` : ''), b: [top || left, left || top, right || left || top], unlit: true };
+      if (top || left) entry = { n: it.name + (it.block.geometry ? t(' ({geometry} missing: drawn as a cube)', { geometry: it.block.geometry }) : ''), b: [top || left, left || top, right || left || top], unlit: true };
     }
   } else {
     const t = texturePathOf(packTextureTable('textures/item_texture.json'), it.name);
@@ -361,7 +383,7 @@ function readHost() {
   } else host = { globals: {}, collections: {}, factories: {} };
   const extra = $('hostExtra').value.trim();
   if (extra) {
-    try { host = mergeHost(host, JSON.parse(extra)); } catch (e) { toast('추가 데이터 JSON 오류: ' + e.message); }
+    try { host = mergeHost(host, JSON.parse(extra)); } catch (e) { toast(t('Extra data JSON error: {msg}', { msg: e.message })); }
   }
   host.assumeHidden = $('assumeHidden').checked;
   return host;
@@ -382,7 +404,7 @@ function rebuild() {
   const ref = $('rootRef').value.trim();
   if (!state.cat.defs.has(ref)) {
     state.tree = null;
-    state.buildDiags = [{ level: 'error', msg: `UI control reference not found: '${ref}'`, where: '루트' }];
+    state.buildDiags = [{ level: 'error', msg: `UI control reference not found: '${ref}'`, where: t('root') }];
     renderAll();
     return;
   }
@@ -395,7 +417,7 @@ function rebuild() {
   layoutTree(tree, screenSize(), layoutOpts());
   const ms = Math.round(performance.now() - t0);
   let n = 0; walk(tree, () => n++);
-  $('catalogInfo').textContent = `정의 ${state.cat.defs.size}개 · 컨트롤 ${n}개 · ${ms}ms`;
+  $('catalogInfo').textContent = t('{defs} definitions · {controls} controls · {ms}ms', { defs: state.cat.defs.size, controls: n, ms });
   fillRootList();
   renderAll();
 }
@@ -434,7 +456,7 @@ function renderAll() {
   renderTreeView();
   renderDetails();
   renderDiags();
-  $('tickInfo').textContent = state.session ? `틱 ${state.session.tick}` : '';
+  $('tickInfo').textContent = state.session ? t('Tick {n}', { n: state.session.tick }) : '';
   showAnimTime();
 }
 
@@ -445,8 +467,13 @@ function animTextureSize(n) {
 
 const animClock = { playing: false, last: 0, raf: 0 };
 function showAnimTime() {
-  $('animTime').textContent = state.session ? `애니메이션 ${state.session.animTime.toFixed(2)}초` : '';
+  $('animTime').textContent = state.session ? t('Animation {s} s', { s: state.session.animTime.toFixed(2) }) : '';
 }
+
+function renderAnimClock() {
+  $('animPlay').textContent = animClock.playing ? t('Stop animations') : t('Play animations');
+}
+renderAnimClock();
 
 function animFrame(now) {
   if (state.session && state.tree) {
@@ -467,7 +494,7 @@ function animFrame(now) {
 
 function toggleAnim() {
   animClock.playing = !animClock.playing;
-  $('animPlay').textContent = animClock.playing ? '애니메이션 멈춤' : '애니메이션 재생';
+  renderAnimClock();
   cancelAnimationFrame(animClock.raf);
   if (animClock.playing) {
     animClock.last = performance.now();
@@ -607,21 +634,21 @@ function renderDetails() {
   const box = $('details');
   box.textContent = '';
   const n = state.selected;
-  if (!n) { box.innerHTML = '<p class="hint">화면이나 트리에서 컨트롤을 고른다. 화면에서 고르면 버튼 누름도 흉내 낸다.</p>'; return; }
+  if (!n) { box.innerHTML = `<p class="hint">${t('Pick a control on the screen or in the tree. Picking on the screen also simulates a button press.')}</p>`; return; }
   const h = document.createElement('h4'); h.textContent = pathOf(n); box.append(h);
-  const t = document.createElement('table');
-  row(t, 'type', n.type ?? '(없음)');
-  row(t, '정의 사슬', n.chain.join(' → ') || '(인라인)');
-  if (n.ignored) row(t, 'ignored', '생성되지 않음 (부모 스코프에서 참)');
-  if (n.rect) row(t, '사각형', `x ${n.rect.x.toFixed(1)} y ${n.rect.y.toFixed(1)} w ${n.rect.w.toFixed(1)} h ${n.rect.h.toFixed(1)} · layer ${n.layerAbs}`);
-  row(t, '보임', n.effVisible ? '예' : '아니오' + (n.assumedHidden ? ` (모르는 전역 ${n.assumedHidden}를 false로 가정)` : ''));
-  if (n.stateName) row(t, '상태', n.stateName);
-  if (n.appliedVariables?.length) row(t, '적용된 variables', n.appliedVariables.join(' / '));
+  const tbl = document.createElement('table');
+  row(tbl, 'type', n.type ?? t('(none)'));
+  row(tbl, t('Definition chain'), n.chain.join(' > ') || t('(inline)'));
+  if (n.ignored) row(tbl, 'ignored', t('Not created (true in the parent scope)'));
+  if (n.rect) row(tbl, t('Rect'), `x ${n.rect.x.toFixed(1)} y ${n.rect.y.toFixed(1)} w ${n.rect.w.toFixed(1)} h ${n.rect.h.toFixed(1)} · layer ${n.layerAbs}`);
+  row(tbl, t('Visible'), n.effVisible ? t('Yes') : t('No') + (n.assumedHidden ? t(' (unknown global {name} assumed false)', { name: n.assumedHidden }) : ''));
+  if (n.stateName) row(tbl, t('State'), n.stateName);
+  if (n.appliedVariables?.length) row(tbl, t('Applied variables'), n.appliedVariables.join(' / '));
   const collection = state.session?.collectionItem(n);
-  if (collection) row(t, '컬렉션 항목', `${collection.collection}[${collection.index}]`);
-  if (n.details) row(t, 'collection_details', [...n.details].join(', '));
-  for (const k of ['text', 'texture', 'alpha', 'clip_ratio', 'color']) if (n.eff && n.eff[k] !== undefined && n.eff[k] !== null) row(t, `실효 ${k}`, n.eff[k]);
-  box.append(t);
+  if (collection) row(tbl, t('Collection item'), `${collection.collection}[${collection.index}]`);
+  if (n.details) row(tbl, 'collection_details', [...n.details].join(', '));
+  for (const k of ['text', 'texture', 'alpha', 'clip_ratio', 'color']) if (n.eff && n.eff[k] !== undefined && n.eff[k] !== null) row(tbl, t('Effective {k}', { k }), n.eff[k]);
+  box.append(tbl);
   const sec = (title, entries) => {
     if (!entries.length) return;
     const hh = document.createElement('h4'); hh.textContent = title; box.append(hh);
@@ -629,12 +656,12 @@ function renderDetails() {
     for (const [k, v] of entries) row(tb, k, v);
     box.append(tb);
   };
-  sec('속성 주머니', n.bag ? [...n.bag].map(([k, v]) => [k, show(v)]) : []);
-  sec('바인딩', (n.props.bindings || []).map((b, i) => [String(i), b]));
-  sec('이 컨트롤의 $ 변수', n.scope ? [...n.scope.concrete, ...[...n.scope.defaults].map(([k, v]) => [k + '|default', v])] : []);
+  sec(t('Property bag'), n.bag ? [...n.bag].map(([k, v]) => [k, show(v)]) : []);
+  sec(t('Bindings'), (n.props.bindings || []).map((b, i) => [String(i), b]));
+  sec(t('$ variables of this control'), n.scope ? [...n.scope.concrete, ...[...n.scope.defaults].map(([k, v]) => [k + '|default', v])] : []);
   const props = Object.entries(n.props).filter(([k]) => !['bindings', 'controls', 'property_bag'].includes(k));
-  sec('해석된 속성', props);
-  sec('진단', [...(n.diags || []), ...(n.bindDiags || [])].map((d) => [d.level, d.msg]));
+  sec(t('Resolved properties'), props);
+  sec(t('Diagnostics'), [...(n.diags || []), ...(n.bindDiags || [])].map((d) => [d.level, d.msg]));
 }
 
 function renderDiags() {
@@ -647,7 +674,7 @@ function renderDiags() {
     const laid = [];
     walk(state.tree, (n) => { if (n.rect) laid.push(n); });
     for (const { node, by } of findOcclusions(laid)) {
-      all.push({ level: 'warn', msg: `라벨 "${String(node.eff.text).slice(0, 20)}"(layer ${node.layerAbs})이 더 높은 레이어의 이미지 ${by.name}(layer ${by.layerAbs})에 가려진다 [LAY-18]`, where: pathOf(node), uid: node.uid });
+      all.push({ level: 'warn', msg: t('Label "{text}" (layer {layer}) is covered by image {by} on a higher layer ({byLayer}) [LAY-18]', { text: String(node.eff.text).slice(0, 20), layer: node.layerAbs, by: by.name, byLayer: by.layerAbs }), where: pathOf(node), uid: node.uid });
     }
     for (const { node, level, msg } of [...findRendererIssues(laid), ...findLayoutIssues(laid)]) all.push({ level, msg, where: pathOf(node), uid: node.uid });
   }
@@ -675,7 +702,7 @@ function renderDiags() {
     if (d.uid) li.onclick = () => { pick(d.uid); showTab('inspect'); };
     ul.append(li);
   }
-  if (!list.length) ul.innerHTML = '<li class="hint">진단 없음</li>';
+  if (!list.length) ul.innerHTML = `<li class="hint">${t('No diagnostics')}</li>`;
 }
 
 // ---------- expression playground ----------
@@ -683,12 +710,12 @@ const EXAMPLES = ['(#s - 0)', '(#s * 1)', '(0 + #s)', '(#s + 0)', '(#c * 0.3)', 
 function runExpr() {
   const out = $('exprOut');
   let bag = {}, vars = {};
-  try { bag = JSON.parse($('exprBag').value || '{}'); vars = JSON.parse($('exprVars').value || '{}'); } catch (e) { out.textContent = 'JSON 오류: ' + e.message; return; }
+  try { bag = JSON.parse($('exprBag').value || '{}'); vars = JSON.parse($('exprVars').value || '{}'); } catch (e) { out.textContent = t('JSON error: {msg}', { msg: e.message }); return; }
   const src = $('exprInput').value;
   const r = evaluate(src, { prop: (n) => (n in bag ? fromJson(bag[n]) : undefined), variable: (n) => (n in vars ? fromJson(vars[n]) : undefined), opts: opts().measured ? { literalNoTruncate: true } : {} });
   out.textContent = r.error ? `Json(Null) — ${r.error}` : show(r.value);
   const hints = lintExpression(src);
-  if (r.hazards.has('EXP-49')) hints.push('문자열을 숫자로 나누면 Windows 1.26.65 클라이언트가 멈춘다. 먼저 `(#v - 0)` [EXP-49]');
+  if (r.hazards.has('EXP-49')) hints.push(t('Dividing a string by a number freezes the Windows 1.26.65 client. Use `(#v - 0)` first [EXP-49]'));
   for (const hint of hints) { const s = document.createElement('span'); s.className = 'hint'; s.textContent = '· ' + hint; out.append(s); }
 }
 for (const ex of EXAMPLES) {
@@ -742,7 +769,7 @@ async function loadServerPacks() {
       state.packs.push(packFromEntries(sp.name, entries, false));
     }
     afterPacksChanged();
-    toast(`서버가 준 팩 ${list.length}개를 실었다: ${list.map((p) => p.name).join(', ')}`);
+    toast(t('Loaded {count} packs from the server: {names}', { count: list.length, names: list.map((p) => p.name).join(', ') }));
     return true;
   } catch { return false; }
 }
@@ -775,7 +802,7 @@ async function applyScenario() {
 // start: try vanilla from the local server, then add the sample pack
 (async () => {
   loadSample();
-  const scenario = await applyScenario().catch((e) => { toast('시나리오를 못 읽었다: ' + e.message); return false; });
+  const scenario = await applyScenario().catch((e) => { toast(t('Could not read the scenario: {msg}', { msg: e.message })); return false; });
   try {
     const r = await fetch('./serve-info', { method: 'HEAD' });
     if (r.ok) { await loadVanillaFromServer(); if (!scenario) $('rootRef').value = 'server_form.third_party_server_screen'; await loadServerPacks(); rebuild(); markReady(); return; }

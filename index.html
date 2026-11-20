@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,64 +8,67 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><strong>MCBE JSON UI Tester</strong><span class="sub">배드락 리소스팩 JSON UI를 게임 없이 돌려 보는 실험 도구 · 결과는 게임 동작이 아니다 · <a href="https://github.com/PresentKim/mcbe-json-ui-tester">GitHub</a></span></div>
+  <div class="brand"><strong>MCBE JSON UI Tester</strong><span class="sub"><span data-i18n>Runs Bedrock resource pack JSON UI without the game · results are not game behavior</span> · <a href="https://github.com/PresentKim/mcbe-json-ui-tester">GitHub</a></span></div>
   <div class="controls">
-    <label>엔진 모델
+    <label><span data-i18n>UI language</span>
+      <select id="uiLang"></select>
+    </label>
+    <label><span data-i18n>Engine model</span>
       <select id="mode">
-        <option value="measured">실측 우선</option>
-        <option value="cn">CN 재구성 그대로</option>
+        <option value="measured" data-i18n>Measured first</option>
+        <option value="cn" data-i18n>CN reconstruction as is</option>
       </select>
     </label>
-    <label>플랫폼
-      <select id="platform"><option value="desktop">데스크톱</option><option value="pocket">휴대폰(pocket)</option></select>
+    <label><span data-i18n>Platform</span>
+      <select id="platform"><option value="desktop" data-i18n>Desktop</option><option value="pocket" data-i18n>Phone (pocket)</option></select>
     </label>
-    <label>게임 언어
-      <select id="language"><option value="ko_KR">한국어 (ASCII도 유니코드 글꼴)</option><option value="en_US">영어 (ASCII는 default8)</option></select>
+    <label><span data-i18n>Game language</span>
+      <select id="language"><option value="en_US" data-i18n>English (ASCII uses default8)</option><option value="ko_KR" data-i18n>Korean (ASCII uses the Unicode font too)</option></select>
     </label>
-    <label>화면
+    <label><span data-i18n>Screen</span>
       <select id="screenSize">
-        <option value="427x240">427×240 (PC GUI 3배)</option>
+        <option value="427x240" data-i18n>427×240 (PC GUI scale 3)</option>
         <option value="320x180">320×180</option>
-        <option value="400x200">400×200 (휴대폰)</option>
+        <option value="400x200" data-i18n>400×200 (phone)</option>
         <option value="640x360">640×360</option>
       </select>
     </label>
-    <label>배율 <input id="zoom" type="range" min="0.5" max="4" step="0.25" value="2"><span id="zoomVal">2×</span></label>
-    <label class="chk"><input id="outlines" type="checkbox"> 윤곽</label>
-    <label class="chk"><input id="showHidden" type="checkbox"> 숨은 것</label>
-    <label class="chk"><input id="assumeHidden" type="checkbox" checked> 모르는 전역 #visible=false</label>
+    <label><span data-i18n>Zoom</span> <input id="zoom" type="range" min="0.5" max="4" step="0.25" value="2"><span id="zoomVal">2×</span></label>
+    <label class="chk"><input id="outlines" type="checkbox"> <span data-i18n>Outlines</span></label>
+    <label class="chk"><input id="showHidden" type="checkbox"> <span data-i18n>Hidden</span></label>
+    <label class="chk"><input id="assumeHidden" type="checkbox" checked> <span data-i18n>Unknown global #visible=false</span></label>
   </div>
 </header>
 
 <main class="layout">
   <aside class="pane left">
-    <nav class="tabs" data-group="left"><button data-tab="packs" class="on">팩</button><button data-tab="files">파일</button></nav>
+    <nav class="tabs" data-group="left"><button data-tab="packs" class="on" data-i18n>Packs</button><button data-tab="files" data-i18n>Files</button></nav>
     <section data-panel="packs" class="panel on">
       <div class="btnrow">
-        <button id="loadVanillaGitHub">바닐라 받기 (GitHub)</button>
-        <button id="loadVanillaServer">바닐라 불러오기 (로컬 서버)</button>
-        <label class="filebtn">바닐라 폴더 고르기<input id="pickVanilla" type="file" webkitdirectory multiple hidden></label>
-        <label class="filebtn">내 리소스팩 폴더 추가<input id="pickPack" type="file" webkitdirectory multiple hidden></label>
-        <button id="loadSample">예제 팩 넣기</button>
+        <button id="loadVanillaGitHub" data-i18n>Get vanilla (GitHub)</button>
+        <button id="loadVanillaServer" data-i18n>Load vanilla (local server)</button>
+        <label class="filebtn"><span data-i18n>Pick vanilla folder</span><input id="pickVanilla" type="file" webkitdirectory multiple hidden></label>
+        <label class="filebtn"><span data-i18n>Add my resource pack folder</span><input id="pickPack" type="file" webkitdirectory multiple hidden></label>
+        <button id="loadSample" data-i18n>Add the sample pack</button>
       </div>
-      <p class="hint">팩 순서가 곧 병합 순서다(위가 먼저). 바닐라는 GitHub(<code>Mojang/bedrock-samples</code> v1.26.50.4)에서 받거나 <code>resource_pack</code> 폴더를 고른다. 내 팩 파일은 브라우저 밖으로 나가지 않는다.</p>
+      <p class="hint" data-i18n-html>The pack order is the merge order (top first). Get vanilla from GitHub (<code>Mojang/bedrock-samples</code> v1.26.50.4) or pick a <code>resource_pack</code> folder. Your pack files never leave the browser.</p>
       <ol id="packList" class="packlist"></ol>
       <div id="catalogInfo" class="hint"></div>
     </section>
     <section data-panel="files" class="panel">
       <select id="fileSelect"></select>
       <textarea id="fileEditor" spellcheck="false"></textarea>
-      <div class="btnrow"><button id="applyFile">적용 (Ctrl+Enter)</button><span id="fileStatus" class="hint"></span></div>
+      <div class="btnrow"><button id="applyFile" data-i18n>Apply (Ctrl+Enter)</button><span id="fileStatus" class="hint"></span></div>
     </section>
   </aside>
 
   <section class="center">
     <div class="stagebar">
-      <label>루트 <input id="rootRef" list="rootList" value="server_form.third_party_server_screen"></label>
+      <label><span data-i18n>Root</span> <input id="rootRef" list="rootList" value="server_form.third_party_server_screen"></label>
       <datalist id="rootList"></datalist>
-      <button id="rebuild">처음부터 다시</button>
-      <button id="tick" title="같은 컨트롤 상태를 유지한 채 호스트 데이터를 다시 보낸다(once, visibility_changed 시험)">다음 틱</button>
-      <button id="animPlay" title="애니메이션 시간을 실제 시간으로 흘린다">애니메이션 재생</button>
+      <button id="rebuild" data-i18n>Start over</button>
+      <button id="tick" data-i18n data-i18n-title="Sends the host data again while keeping control state (tests once, visibility_changed)">Next tick</button>
+      <button id="animPlay" data-i18n-title="Runs animation time in real time"></button>
       <span id="animTime" class="hint"></span>
       <span id="tickInfo" class="hint"></span>
     </div>
@@ -75,52 +78,52 @@
 
   <aside class="pane right">
     <nav class="tabs" data-group="right">
-      <button data-tab="host" class="on">호스트</button><button data-tab="inspect">검사</button><button data-tab="diag">진단 <span id="diagCount" class="badge">0</span></button><button data-tab="expr">식 실험</button>
+      <button data-tab="host" class="on" data-i18n>Host</button><button data-tab="inspect" data-i18n>Inspect</button><button data-tab="diag"><span data-i18n>Diagnostics</span> <span id="diagCount" class="badge">0</span></button><button data-tab="expr" data-i18n>Expressions</button>
     </nav>
     <section data-panel="host" class="panel on">
-      <label>화면 종류
+      <label><span data-i18n>Screen kind</span>
         <select id="hostKind">
-          <option value="server_form">서버 폼 (ActionForm/ModalForm)</option>
-          <option value="hud">HUD (타이틀·액션바)</option>
-          <option value="chest">상자 화면</option>
-          <option value="custom">직접 지정</option>
+          <option value="server_form" data-i18n>Server form (ActionForm/ModalForm)</option>
+          <option value="hud" data-i18n>HUD (title, actionbar)</option>
+          <option value="chest" data-i18n>Chest screen</option>
+          <option value="custom" data-i18n>Custom</option>
         </select>
       </label>
       <div data-host="server_form">
-        <label>폼 종류 <select id="formKind"><option value="action">액션 폼</option><option value="modal">모달 폼</option></select></label>
-        <label>제목 <input id="formTitle"></label>
-        <label>본문 <textarea id="formBody" rows="2"></textarea></label>
-        <label>버튼 / 행 (한 줄에 하나. 액션: <code>글자|텍스처</code>, 모달: <code>toggle|글자</code>)<textarea id="formButtons" rows="5"></textarea></label>
+        <label><span data-i18n>Form kind</span> <select id="formKind"><option value="action" data-i18n>Action form</option><option value="modal" data-i18n>Modal form</option></select></label>
+        <label><span data-i18n>Title</span> <input id="formTitle"></label>
+        <label><span data-i18n>Body</span> <textarea id="formBody" rows="2"></textarea></label>
+        <label><span data-i18n-html>Buttons / rows (one per line. Action: <code>text|texture</code>, modal: <code>toggle|text</code>)</span><textarea id="formButtons" rows="5"></textarea></label>
       </div>
       <div data-host="hud" hidden>
-        <label>타이틀 <input id="hudTitle"></label>
-        <label>부제 <input id="hudSubtitle"></label>
-        <label>액션바 <input id="hudActionbar"></label>
+        <label><span data-i18n>Title</span> <input id="hudTitle"></label>
+        <label><span data-i18n>Subtitle</span> <input id="hudSubtitle"></label>
+        <label><span data-i18n>Actionbar</span> <input id="hudActionbar"></label>
       </div>
       <div data-host="chest" hidden>
-        <label>상자 이름 ($container_title) <input id="chestTitle" value="Chest"></label>
-        <label>칸 (한 줄에 <code>aux|개수|이름|최대 내구도</code>) <textarea id="chestSlots" rows="5"></textarea></label>
+        <label><span data-i18n>Chest name ($container_title)</span> <input id="chestTitle" value="Chest"></label>
+        <label><span data-i18n-html>Slots (one per line: <code>aux|count|name|max durability</code>)</span> <textarea id="chestSlots" rows="5"></textarea></label>
       </div>
-      <label>추가 데이터 (JSON: <code>globals</code>, <code>collections</code>, <code>factories</code>, <code>hostVars</code>)
+      <label><span data-i18n-html>Extra data (JSON: <code>globals</code>, <code>collections</code>, <code>factories</code>, <code>hostVars</code>)</span>
         <textarea id="hostExtra" rows="5" spellcheck="false" placeholder='{"globals": {"#title_text": "x"}}'></textarea></label>
-      <div class="btnrow"><button id="applyHost">호스트 적용</button></div>
-      <h4>버튼 누름 기록</h4>
+      <div class="btnrow"><button id="applyHost" data-i18n>Apply host</button></div>
+      <h4 data-i18n>Button press log</h4>
       <ol id="pressLog" class="log"></ol>
     </section>
     <section data-panel="inspect" class="panel">
       <div id="tree" class="tree"></div>
-      <div id="details" class="details"><p class="hint">화면이나 트리에서 컨트롤을 고른다.</p></div>
+      <div id="details" class="details"></div>
     </section>
     <section data-panel="diag" class="panel">
-      <div class="btnrow"><label class="chk"><input id="diagInfo" type="checkbox"> info 보기</label></div>
+      <div class="btnrow"><label class="chk"><input id="diagInfo" type="checkbox"> <span data-i18n>Show info</span></label></div>
       <ul id="diagList" class="diaglist"></ul>
     </section>
     <section data-panel="expr" class="panel">
-      <label>식 <input id="exprInput" value="('%.6s' * #s)"></label>
-      <label>속성 주머니 (JSON) <textarea id="exprBag" rows="3" spellcheck="false">{"#s": "가나다abc", "#v": "35", "#c": 10}</textarea></label>
-      <label>변수 (JSON) <textarea id="exprVars" rows="2" spellcheck="false">{"$one": 1}</textarea></label>
+      <label><span data-i18n>Expression</span> <input id="exprInput" value="('%.6s' * #s)"></label>
+      <label><span data-i18n>Property bag (JSON)</span> <textarea id="exprBag" rows="3" spellcheck="false">{"#s": "가나다abc", "#v": "35", "#c": 10}</textarea></label>
+      <label><span data-i18n>Variables (JSON)</span> <textarea id="exprVars" rows="2" spellcheck="false">{"$one": 1}</textarea></label>
       <div id="exprOut" class="exprout"></div>
-      <h4>Cinnabar 실행 결과로 검증한 예</h4>
+      <h4 data-i18n>Examples checked against the Cinnabar evaluator</h4>
       <div id="exprExamples" class="chips"></div>
     </section>
   </aside>

@@ -2,7 +2,7 @@
 // Headless run of the tester: load packs, build a screen, bind mock host data, lay out, print findings.
 //   node cli.mjs --vanilla <resource_pack dir> [--pack <dir>]... [--sample] --root <ns.name>
 //                [--host server_form|hud|chest|none] [--title T] [--body B] [--buttons "a;b;c"]
-//                [--slots slots.json] [--hud-title T] [--actionbar A] [--language ko_KR|en_US] [--cn] [--json]
+//                [--slots slots.json] [--hud-title T] [--actionbar A] [--language en_US|ko_KR] [--ui-lang en|ko] [--cn] [--json]
 //   slots.json (chest host): [{ "name": "...", "id_aux": 65536, "count": 1, "durability": 0 }, ...] by slot index
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,11 +14,13 @@ import { serverFormHost, hudHost, chestHost, PLATFORMS } from './src/engine/host
 import { SAMPLE_PACK } from './samples/sample-pack.js';
 import { createMeasure } from './src/engine/font.js';
 import { parseLang } from './src/engine/lang.js';
+import { t, setLocale } from './src/i18n.js';
 
 const args = process.argv.slice(2);
 const opt = (name, dflt) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : dflt; };
 const all = (name) => args.flatMap((a, i) => (a === `--${name}` ? [args[i + 1]] : []));
 const flag = (name) => args.includes(`--${name}`);
+setLocale(opt('ui-lang', 'en'));
 
 function readPack(dir, name, vanilla) {
   const files = {};
@@ -30,7 +32,7 @@ function readPack(dir, name, vanilla) {
     }
   };
   const ui = path.join(dir, 'ui');
-  if (!fs.existsSync(ui)) throw new Error(`${dir}: ui/ 폴더가 없다`);
+  if (!fs.existsSync(ui)) throw new Error(t('{dir}: no ui/ folder', { dir }));
   walkDir(ui, '/ui');
   return { name, files, vanilla };
 }
@@ -56,7 +58,7 @@ if (kind === 'chest') host = chestHost({ title: opt('title', 'Chest'), slots: op
 const root = opt('root');
 if (!cat.defs.has(root)) { console.error(`UI control reference not found: '${root}'`); process.exit(2); }
 const { tree, diags } = buildTree(cat, root, { platform: PLATFORMS[opt('platform', 'desktop')], hostVars: host.hostVars });
-const language = opt('language', 'ko_KR');
+const language = opt('language', 'en_US');
 const lang = new Map();
 for (const dir of [opt('vanilla'), ...all('pack')].filter(Boolean)) {
   const file = path.join(dir, 'texts', `${language}.lang`);
@@ -71,7 +73,7 @@ const laid = layoutTree(tree, { w: Number(opt('w', 427)), h: Number(opt('h', 240
 const findings = [...cat.diags.filter((d) => d.level !== 'info'), ...diags];
 let count = 0;
 walk(tree, (n) => { count++; for (const d of n.bindDiags || []) findings.push(d); });
-for (const { node, by } of findOcclusions(laid)) findings.push({ level: 'warn', msg: `라벨 "${node.eff.text}"이 더 높은 레이어의 ${by.name}에 가려진다 [LAY-18]`, where: pathOf(node) });
+for (const { node, by } of findOcclusions(laid)) findings.push({ level: 'warn', msg: t('Label "{text}" is covered by {by} on a higher layer [LAY-18]', { text: node.eff.text, by: by.name }), where: pathOf(node) });
 for (const { node, level, msg } of [...findRendererIssues(laid), ...findLayoutIssues(laid)]) if (level !== 'info') findings.push({ level, msg, where: pathOf(node) });
 const texts = [];
 walk(tree, (n) => { if (n.effVisible && n.props.type === 'label' && n.eff?.text) texts.push({ text: n.eff.text, rect: n.rect && [n.rect.x, n.rect.y, n.rect.w, n.rect.h].map(Math.round), where: pathOf(n) }); });
@@ -79,10 +81,10 @@ walk(tree, (n) => { if (n.effVisible && n.props.type === 'label' && n.eff?.text)
 if (flag('json')) {
   console.log(JSON.stringify({ root, controls: count, findings, labels: texts }, null, 1));
 } else {
-  console.log(`${root}: 정의 ${cat.defs.size}개, 컨트롤 ${count}개, 모드 ${measured ? '실측 우선' : 'CN'}`);
-  console.log(`\n진단 ${findings.length}건`);
+  console.log(t('{root}: {defs} definitions, {controls} controls, mode {mode}', { root, defs: cat.defs.size, controls: count, mode: measured ? t('Measured first') : 'CN' }));
+  console.log('\n' + t('{count} diagnostics', { count: findings.length }));
   for (const d of findings) console.log(`  [${d.level}] ${d.msg}\n          ${d.where || ''}`);
-  console.log(`\n보이는 라벨 ${texts.length}개`);
-  for (const t of texts) console.log(`  ${JSON.stringify(t.text)} @ ${t.rect}`);
+  console.log('\n' + t('{count} visible labels', { count: texts.length }));
+  for (const label of texts) console.log(`  ${JSON.stringify(label.text)} @ ${label.rect}`);
 }
 process.exit(findings.some((d) => d.level === 'error') ? 1 : 0);

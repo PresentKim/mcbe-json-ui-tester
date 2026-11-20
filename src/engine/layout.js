@@ -439,7 +439,7 @@ export function findLayoutIssues(nodes) {
   for (const n of nodes) {
     for (const k of ['size', 'offset', 'min_size', 'max_size']) {
       const v = n.props[k];
-      if (v !== undefined && v !== null && !Array.isArray(v) && !isAnimRef(v)) out.push({ node: n, level: 'warn', msg: t('{k} is not an array ({v}). The engine logs "expected an array" and reads both axes as default', { k, v: JSON.stringify(v) }) });
+      if (v !== undefined && v !== null && !Array.isArray(v) && !isAnimRef(v) && !(typeof v === 'string' && v.startsWith('$'))) out.push({ node: n, level: 'warn', msg: t('{k} is not an array ({v}). The engine logs "expected an array" and reads both axes as default', { k, v: JSON.stringify(v) }) });
     }
     for (const k of ['anchor_from', 'anchor_to']) {
       const v = n.props[k];

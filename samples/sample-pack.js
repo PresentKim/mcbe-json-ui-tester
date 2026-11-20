@@ -117,14 +117,14 @@ const hudScreen = {
     text: '#shown', $update_string: 'pin:',
     bindings: [
       { binding_type: 'view', source_control_name: 'pin_data', source_property_name: '#preserved_text', target_property_name: '#preserved_text' },
-      { binding_type: 'view', source_property_name: "('고정: ' + (#preserved_text - $update_string))", target_property_name: '#shown' }],
+      { binding_type: 'view', source_property_name: "('Pinned: ' + (#preserved_text - $update_string))", target_property_name: '#shown' }],
   },
 };
 
 const enc = (o) => JSON.stringify(o, null, 2);
 
 export const SAMPLE_PACK = {
-  name: 'sample (가이드 11장 레시피)',
+  name: 'sample (guide chapter 11 recipes)',
   files: {
     'ui/_ui_defs.json': enc({ ui_defs: ['ui/myui/screen.json', 'ui/demo.json'] }),
     'ui/server_form.json': enc(serverForm),
@@ -135,6 +135,6 @@ export const SAMPLE_PACK = {
 };
 
 export const SAMPLE_FORM = {
-  kind: 'action', title: 'myui:v1 상점', body: '',
-  buttons: [{ text: '§a사과 구매' }, { text: '§e빵 구매' }, { text: '집계 안 되는 버튼' }, { text: '값 칸: 1,250 코인' }],
+  kind: 'action', title: 'myui:v1 Shop', body: '',
+  buttons: [{ text: '§aBuy apple' }, { text: '§eBuy bread' }, { text: 'Button without a count' }, { text: 'Price: 1,250 coins' }],
 };

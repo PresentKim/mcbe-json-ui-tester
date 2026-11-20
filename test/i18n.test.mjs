@@ -18,6 +18,17 @@ test('every message has a Korean translation', () => {
   assert.deepEqual(missing, []);
 });
 
+test('every page text has a Korean translation', () => {
+  const html = fs.readFileSync('index.html', 'utf8');
+  const keys = [
+    ...[...html.matchAll(/data-i18n(?=[\s>])[^>]*>([^<]+)</g)].map((m) => m[1]),
+    ...[...html.matchAll(/data-i18n-title="([^"]*)"/g)].map((m) => m[1]),
+    ...[...html.matchAll(/<(\w+)[^>]*data-i18n-html[^>]*>([\s\S]*?)<\/\1>/g)].map((m) => m[2]),
+  ];
+  assert.ok(keys.length > 50);
+  assert.deepEqual(keys.filter((k) => !(k in KO)), []);
+});
+
 test('Korean translations keep the placeholders', () => {
   const names = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
   const broken = Object.entries(KO).filter(([en, ko]) => names(en).join() !== names(ko).join()).map(([en]) => en);

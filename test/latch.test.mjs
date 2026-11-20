@@ -17,7 +17,7 @@ test('preserved title keeps the last prefixed title', () => {
   const { tree } = buildTree(cat, 'hud.hud_screen');
   const s = new Session(cat, tree);
   const shown = () => { let v; walk(tree, (n) => { if (n.name === 'pin_label') v = n.eff.text; }); return v; };
-  const seq = [['', '고정: '], ['pin:hello', null], ['pin:hello', '고정: hello'], ['', '고정: hello'], ['other', '고정: hello'], ['pin:bye', null], ['pin:bye', '고정: bye']];
+  const seq = [['', 'Pinned: '], ['pin:hello', null], ['pin:hello', 'Pinned: hello'], ['', 'Pinned: hello'], ['other', 'Pinned: hello'], ['pin:bye', null], ['pin:bye', 'Pinned: bye']];
   for (const [title, want] of seq) {
     s.run(hudHost({ title }));
     if (want !== null) assert.equal(shown(), want, `after title ${JSON.stringify(title)}`);
