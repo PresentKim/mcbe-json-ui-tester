@@ -98,7 +98,8 @@ export function renderTree(stage, root, opts) {
     // engine renderers other than item icons are only placeholders: show them with the outlines
     const isItem = rendererOf(n) === 'inventory_item_renderer';
     const isGradient = rendererOf(n) === 'gradient_renderer';
-    const drawable = t === 'image' || t === 'label' || isItem || isGradient || (t === 'custom' && outlines) || n.props.debug;
+    const isNameTag = rendererOf(n) === 'name_tag_renderer';
+    const drawable = t === 'image' || t === 'label' || isItem || isGradient || isNameTag || (t === 'custom' && outlines) || n.props.debug;
     const showBox = outlines || n.uid === selectedUid;
     if (!drawable && !showBox) continue;
     const { x, y, w, h } = n.rect;
@@ -121,6 +122,7 @@ export function renderTree(stage, root, opts) {
     }
     else if (t === 'label') drawLabel(ctx, n, zoom, dpr);
     else if (isGradient) drawGradient(ctx, n);
+    else if (isNameTag) drawNameTag(ctx, n, zoom, dpr);
     else {
       const item = isItem && itemIcons ? drawItem(ctx, n, itemIcons, textures, zoom, dpr, measured) : false;
       if (item !== false) mark = item;
@@ -342,6 +344,42 @@ function drawGradient(ctx, n) {
   g.addColorStop(1, css(n.props.color2) || '#fff');
   ctx.fillStyle = g;
   ctx.fillRect(x, y, w, h);
+}
+
+export function nameTagBox(n) {
+  const tag = n.nameTag;
+  if (!tag || !n.rect) return null;
+  const pad = (key) => { const v = n.bag?.get(key); return v && (v.k === 'int' || v.k === 'num') ? Math.trunc(v.v) : 0; };
+  const px = pad('#x_padding'), py = pad('#y_padding');
+  const cx = n.rect.x + n.rect.w * 0.5, cy = n.rect.y + n.rect.h * 0.5;
+  const x0 = cx - 1 - tag.w / 2 - px, y0 = cy - 1 - tag.h / 2 - py;
+  const background = rgbaOf(n.props.background_color) || [0, 0, 0, 0.25];
+  return {
+    x0, y0, x1: cx + tag.w / 2 + px, y1: cy + tag.h / 2 + py,
+    textX: x0 + 1 + px, textY: y0 + 2 + py,
+    text: rgbaOf(n.props.text_color) || [255, 255, 255, 1],
+    background: tag.w > 0 ? background : [...background.slice(0, 3), 0],
+  };
+}
+
+function drawNameTag(ctx, n, zoom, dpr) {
+  const box = nameTagBox(n);
+  if (!box) return;
+  if (box.background[3] > 0) {
+    ctx.fillStyle = rgbaCss(box.background);
+    ctx.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const font = (bold) => `${bold ? '700 ' : ''}${8 * zoom}px ${FONT_FAMILY}`;
+  ctx.font = font(false);
+  const m = ctx.measureText('M');
+  const ascent = Math.round(m.fontBoundingBoxAscent), descent = Math.round(m.fontBoundingBoxDescent);
+  const baseline = Math.floor((10 * zoom - ascent - descent) / 2) + ascent;
+  let state = { color: box.text, bold: false };
+  n.nameTag.lines.forEach((line, row) => {
+    const glyphs = line.glyphs ?? plainGlyphs(ctx, line.text, zoom);
+    state = drawGlyphs(ctx, glyphs, box.textX * zoom, box.textY * zoom + row * 10 * zoom + baseline, state, box.text, font, zoom, rgbaCss);
+  });
 }
 
 function clipInset({ x, y, w, h }, c) {

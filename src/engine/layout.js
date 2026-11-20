@@ -5,7 +5,7 @@
 import { parseSize, resolveTerms, usesChildren, usesSiblings } from './size.js';
 import { layoutText } from './font.js';
 import { isAnimRef } from './anim.js';
-import { bool } from './expr.js';
+import { bool, int } from './expr.js';
 import { t } from '../i18n.js';
 
 const FONT_SCALE = { small: 0.5, normal: 1, large: 2, extra_large: 4 };
@@ -74,6 +74,14 @@ export function layoutTree(root, screen, opts = {}) {
     if (eff['#size_binding_x_absolute'] !== undefined) res[0] = eff['#size_binding_x_absolute'];
     if (eff['#size_binding_y_absolute'] !== undefined) res[1] = eff['#size_binding_y_absolute'];
     if (label && specs[0].kind !== 'default' && specs[1].kind === 'default') res[1] = measure(eff.text ?? '', scale, textWidthLimit(res[0]), { linePadding: linePaddingOf(p) }).h;
+    if (p.type === 'image' && flagOn(p.default_size_scales_to_ratio)) {
+      const tex = opts.textureSize?.(eff.texture);
+      const dflt = specs.map((s) => s.kind === 'default');
+      if (tex && tex[0] > 0 && tex[1] > 0 && dflt[0] !== dflt[1]) {
+        if (dflt[0]) res[0] = res[1] * tex[0] / tex[1];
+        else res[1] = res[0] * tex[1] / tex[0];
+      }
+    }
     return { res, specs };
   }
 
@@ -113,10 +121,10 @@ export function layoutTree(root, screen, opts = {}) {
     if (needKids) {
       for (const ax of [0, 1]) {
         const spec = specs[ax];
-        if (Number.isNaN(res[ax])) {
-          if (node.props.type === 'grid') res[ax] = kids.extent[ax];
-          else res[ax] = kids.sum[ax];
-        } else if (usesChildren(spec)) res[ax] = resolveTerms(spec, envOf(ax));
+        const coef = node.props.type === 'grid' ? gridCoefficient(spec) : 0;
+        if (coef > 0) res[ax] = coef * kids.dims[ax] * kids.cell[ax];
+        else if (Number.isNaN(res[ax])) res[ax] = node.props.type === 'grid' ? kids.extent[ax] : kids.sum[ax];
+        else if (usesChildren(spec)) res[ax] = resolveTerms(spec, envOf(ax));
       }
       [w, h] = res;
     }
@@ -131,7 +139,7 @@ export function layoutTree(root, screen, opts = {}) {
   function layoutChildren(node, w, h) {
     const kids = node.children.filter((c) => !c.ignored);
     const sum = [0, 0], max = [0, 0], extent = [0, 0];
-    if (kids.length === 0) { node.kidsLayout = []; return { sum, max, extent }; }
+    if (kids.length === 0) { node.kidsLayout = []; return { sum, max, extent, dims: [0, 0], cell: [0, 0] }; }
     const visibleKids = kids.filter((c) => c.eff?.visible !== false);
     // sibling max for %sm; siblings that use %sm themselves are excluded (CN-47)
     const sibMax = [0, 0];
@@ -143,21 +151,31 @@ export function layoutTree(root, screen, opts = {}) {
         sibMax[0] = Math.max(sibMax[0], cw); sibMax[1] = Math.max(sibMax[1], ch);
       }
     }
+    const inherited = inheritedSizes(kids, (c) => measureNode(c, w, h, sibMax));
+    const measureKid = (c, forced) => {
+      const own = inherited.get(c);
+      return measureNode(c, w, h, sibMax, own || forced ? [forced?.[0] ?? own?.[0], forced?.[1] ?? own?.[1]] : undefined);
+    };
     const placed = [];
     if (node.props.type === 'stack_panel') {
       const ax = axisIndex(node), cross = 1 - ax;
       const fills = [];
+      const sizes = new Map();
       let used = 0;
       for (const c of kids) {
         const spec = parseSize(sizePair(sizeProp(c))[ax]);
         if (spec.kind === 'fill') { fills.push(c); continue; }
-        const sz = measureNode(c, w, h, sibMax);
-        if (c.eff?.visible !== false) used += sz[ax]; // hidden children take no space (LAY-04)
+        sizes.set(c, measureKid(c).slice());
       }
-      const share = fills.length ? Math.max(0, ((ax === 0 ? w : h) - used) / fills.filter((c) => c.eff?.visible !== false).length || 0) : 0;
+      const len = (node.props.orientation ?? 'vertical') === 'vertical' ? h : w;
+      const priority = flagOn(node.props.use_priority) ? stackPriority(kids, sizes, ax, len) : null;
+      const shown = (c) => c.eff?.visible !== false && !priority?.hidden.has(c);
+      for (const [c, sz] of sizes) if (shown(c)) used += sz[ax]; // hidden children take no space (LAY-04)
+      const share = fills.length ? Math.max(0, ((ax === 0 ? w : h) - used) / fills.filter(shown).length || 0) : 0;
       for (const c of fills) {
-        measureNode(c, w, h, sibMax, ax === 0 ? [share, undefined] : [undefined, share]);
+        measureKid(c, ax === 0 ? [share, undefined] : [undefined, share]);
       }
+      if (priority) placed.priority = priority;
       let cur = 0;
       for (const c of kids) {
         const sz = c.size;
@@ -170,8 +188,8 @@ export function layoutTree(root, screen, opts = {}) {
           pos[cross] = f[cross] * (cross === 0 ? w : h) - t[cross] * sz[cross];
         }
         // offset is ignored inside a stack (LAY-38)
-        placed.push({ c, x: pos[0], y: pos[1] });
-        if (!hidden) cur += sz[ax];
+        placed.push({ c, x: pos[0], y: pos[1], priorityHidden: priority ? priority.hidden.has(c) : undefined });
+        if (shown(c)) cur += sz[ax];
         // %c across a stack adds the children too: two boards in a horizontal stack doubled its height (LAY-52)
         if (!hidden) { sum[ax] += sz[ax]; max[ax] = Math.max(max[ax], sz[ax]); sum[cross] += sz[cross]; max[cross] = Math.max(max[cross], sz[cross]); }
       }
@@ -179,13 +197,14 @@ export function layoutTree(root, screen, opts = {}) {
     } else if (node.props.type === 'grid') {
       const dims = node.gridDims || node.props.grid_dimensions || null;
       let cellW = 0, cellH = 0;
-      for (const c of kids) { const sz = measureNode(c, w, h, sibMax); cellW = Math.max(cellW, sz[0]); cellH = Math.max(cellH, sz[1]); }
+      for (const c of kids) { const sz = measureKid(c); cellW = Math.max(cellW, sz[0]); cellH = Math.max(cellH, sz[1]); }
+      const cell = [cellW, cellH];
       const fitCols = Math.max(1, Math.floor(w / (cellW || 1)));
-      let cols = dims ? dims[0] : fitCols;
+      let cols = dims ? dims[0] : fitCols, rescaledRows = null;
       if (node.props.grid_rescaling_type === 'horizontal') cols = fitCols; // LAY-30
       else if (node.props.grid_rescaling_type === 'vertical') {
-        const rows = Math.max(1, Math.floor(h / (cellH || 1)));
-        cols = Math.max(1, Math.ceil(kids.length / rows));
+        rescaledRows = Math.max(1, Math.floor(h / (cellH || 1)));
+        cols = Math.max(1, Math.ceil(kids.length / rescaledRows));
       } else if (dims && w > 0) {
         // fixed dimensions split the grid width into equal cells, and a template wider than a cell wraps to its own row (LAY-41)
         cols = Math.min(dims[0], fitCols);
@@ -204,9 +223,13 @@ export function layoutTree(root, screen, opts = {}) {
         extent[1] = Math.max(extent[1], (row + 1) * cellH);
       });
       sum[0] = extent[0]; sum[1] = extent[1]; max[0] = cellW; max[1] = cellH;
+      const fixed = isNone(node.props.grid_rescaling_type) && isNone(node.props.grid_fill_direction);
+      const gridDims = fixed && dims ? [dims[0], dims[1]] : [cols, rescaledRows ?? rowsFixed];
+      node.kidsLayout = placed;
+      return { sum, max, extent, dims: gridDims, cell };
     } else {
       for (const c of kids) {
-        const sz = measureNode(c, w, h, sibMax);
+        const sz = measureKid(c);
         const [fx, fy] = anchorFactor(c.props.anchor_from);
         let [tx, ty] = anchorFactor(c.props.anchor_to);
         let ox = 0, oy = 0;
@@ -255,6 +278,20 @@ export function layoutTree(root, screen, opts = {}) {
       node.textUnicode = text.unicode;
       if (node.bag) node.bag.set('#using_ellipses', bool(text.ellipsis));
     }
+    if (node.props.type === 'custom' && node.props.renderer === 'name_tag_renderer') {
+      const name = node.bag?.get('#playername');
+      const text = measure(name?.k === 'str' ? name.v : '', 1);
+      node.nameTag = { lines: text.lineTexts, w: text.w, h: Math.trunc(text.h) };
+    }
+    const priority = node.kidsLayout?.priority;
+    if (priority) {
+      priorityUsed = true;
+      if (priority.overflow >= 0) node.bag?.set(`${node.name}_first_hidden_child_index`, int(priority.overflow));
+      for (const k of node.kidsLayout) {
+        k.c.priorityHidden = k.priorityHidden;
+        if (k.priorityHidden && priority.overflow >= 0) k.c.bag?.set(`${k.c.name}_invisible`, bool(true));
+      }
+    }
     const rect = { x, y, w, h };
     const lay = layer + (typeof node.props.layer === 'number' ? Math.trunc(node.props.layer) : 0); // relative to the parent (LAY-18)
     const childClip = node.props.clips_children ? clipRect(rect, node.props.clip_offset, clip) : clip;
@@ -273,11 +310,61 @@ export function layoutTree(root, screen, opts = {}) {
   applyScroll(root);
   const [rw, rh] = root.size;
   const [fx, fy] = anchorFactor(root.props.anchor_from), [tx, ty] = anchorFactor(root.props.anchor_to);
+  let priorityUsed = false;
   position(root, fx * screen.w - tx * rw, fy * screen.h - ty * rh, 0, null);
+  if (priorityUsed) {
+    const vis = (n, parent) => { n.effVisible = parent && n.eff?.visible !== false && !n.priorityHidden; for (const c of n.children) if (!c.ignored) vis(c, n.effVisible); };
+    vis(root, true);
+  }
   return out;
 }
 
-function findByName(node, name) {
+const isNone = (v) => v === undefined || v === 'none';
+
+function gridCoefficient(spec) {
+  if (spec.kind === 'default') return 1;
+  if (spec.kind !== 'terms') return 0;
+  return spec.terms.reduce((a, t) => (t.unit === '%c' ? a + t.v / 100 : a), 0);
+}
+
+function inheritedSizes(kids, measureOf) {
+  const out = new Map();
+  const flags = (c) => [flagOn(c.props.inherit_max_sibling_width), flagOn(c.props.inherit_max_sibling_height)];
+  if (!kids.some((c) => flags(c).some(Boolean))) return out;
+  const own = new Map(kids.map((c) => [c, measureOf(c).slice()]));
+  const most = [0, 0];
+  for (const [c, sz] of own) if (c.eff?.visible !== false) { most[0] = Math.max(most[0], sz[0]); most[1] = Math.max(most[1], sz[1]); }
+  for (const c of kids) {
+    const f = flags(c);
+    if (f[0] || f[1]) out.set(c, f.map((on, ax) => (on ? Math.max(own.get(c)[ax], most[ax]) : undefined)));
+  }
+  return out;
+}
+
+const PRIORITY_RULES = { show_when_controls_are_hidden: 1 };
+const priorityOf = (c) => (typeof c.props.priority === 'number' ? Math.trunc(c.props.priority) : 0);
+
+function stackPriority(kids, sizes, ax, len) {
+  const hidden = new Set();
+  if (!(len > 0)) return { hidden, overflow: -1 };
+  const lengthOf = (c) => (c.eff?.visible === false ? 0 : sizes.get(c)[ax]);
+  const ruleOf = (c) => PRIORITY_RULES[c.props.priority_rule] ?? 0;
+  let total = 0;
+  const overflow = kids.findIndex((c) => sizes.has(c) && ruleOf(c) === 0 && (total += lengthOf(c)) > len);
+  if (overflow < 0) {
+    for (const c of kids) if (ruleOf(c) !== 0) hidden.add(c);
+    return { hidden, overflow };
+  }
+  let room = len;
+  for (const c of [...sizes.keys()].sort((a, b) => priorityOf(a) - priorityOf(b))) {
+    const s = lengthOf(c);
+    if (s > room && priorityOf(c) > 0) hidden.add(c);
+    else room -= s;
+  }
+  return { hidden, overflow };
+}
+
+export function findByName(node, name) {
   const q = [...node.children];
   while (q.length) {
     const n = q.shift();
@@ -390,6 +477,10 @@ export function wheelScroll(view, notches) {
   while (screen && screen.props.type !== 'screen') screen = screen.parent;
   const delta = typeof screen?.props.vertical_scroll_delta === 'number' ? screen.props.vertical_scroll_delta : 20;
   return scrollTo(view, (view.scrollPos ?? 0) + wheelSpeed * notches * delta);
+}
+
+export function scrollToEdge(view, end) {
+  return scrollTo(view, end ? Infinity : 0);
 }
 
 export function scrollViewAt(nodes, x, y) {
