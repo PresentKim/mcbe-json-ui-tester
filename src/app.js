@@ -83,7 +83,7 @@ async function loadFolder(fileList, vanilla) {
     packName = packName || p.split('/')[0];
     const rel = m[1];
     if (rel.startsWith('ui/') && UI_EXT.test(rel)) entries.push({ rel, text: await f.text() });
-    else if (rel.startsWith('textures/') && /\.(png|jpe?g)$/i.test(rel)) entries.push({ rel, blob: f });
+    else if (rel.startsWith('textures/') && /\.(tga|png|jpe?g)$/i.test(rel)) entries.push({ rel, blob: f });
     else if ((rel.startsWith('textures/') || rel.startsWith('models/')) && rel.endsWith('.json')) entries.push({ rel, text: await f.text() });
     else if (LANG_FILE.test(rel)) entries.push({ rel, blob: f });
   }
@@ -100,7 +100,7 @@ async function loadVanillaFromServer() {
     const entries = [];
     for (const rel of idx.files) {
       if (idx.text[rel] !== undefined) entries.push({ rel, text: idx.text[rel] });
-      else if (/\.(png|jpe?g)$/i.test(rel) || LANG_FILE.test(rel)) entries.push({ rel, url: `./vanilla/${rel}` });
+      else if (/\.(tga|png|jpe?g)$/i.test(rel) || LANG_FILE.test(rel)) entries.push({ rel, url: `./vanilla/${rel}` });
     }
     const pack = packFromEntries('vanilla 1.26.50.4 (bedrock-samples)', entries, true);
     state.packs = [pack, ...state.packs.filter((p) => !p.vanilla)];
@@ -232,9 +232,11 @@ function textureLookup(path) {
   let found = null;
   for (let i = state.packs.length - 1; i >= 0 && !found; i--) {
     const p = state.packs[i];
-    for (const ext of ['.png', '.jpg', '.jpeg']) {
+    const engineExt = ['.tga', '.png', '.jpg', '.jpeg'].find((ext) => p.textures.has(path + ext));
+    const drawableExt = ['.png', '.jpg', '.jpeg'].find((ext) => p.textures.has(path + ext));
+    if (engineExt === '.tga' && !drawableExt) { found = { url: null, format: '.tga', nineslice: null }; break; }
+    for (const ext of drawableExt ? [drawableExt] : []) {
       const e = p.textures.get(path + ext);
-      if (!e) continue;
       const url = e.url || (e.blobUrl ||= URL.createObjectURL(e.blob));
       const side = p.textures.get(path + '.json');
       let nineslice = null;
@@ -481,7 +483,7 @@ function renderStage() {
   stage.style.height = `${h * z}px`;
   if (!state.tree) { stage.textContent = ''; return; }
   renderTree(stage, state.tree, {
-    zoom: z, textures: textureLookup, items: itemLookup, outlines: $('outlines').checked, showHidden: $('showHidden').checked,
+    zoom: z, textures: textureLookup, items: itemLookup, outlines: $('outlines').checked, showHidden: $('showHidden').checked, measured: opts().measured,
     selectedUid: state.selected?.uid,
     onPick: (uid) => pick(uid),
     onRendered: (n) => state.session?.anim.rendered(n),

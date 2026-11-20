@@ -637,7 +637,7 @@ export class Session {
       const onlyBound = (k) => !this.opts.measured || node.boundKeys?.has(k);
       eff.alpha = (onlyBound('#alpha') ? pick('#alpha', 'alpha', 'num') : this.literalProp(node, 'alpha')) ?? 1;
       if (this.opts.measured && node.boundKeys?.has('#alpha')) eff.alpha = eff.alpha >= 1 ? 1 : eff.alpha <= 0 ? 0 : eff.alpha; // C-45 note in inspector
-      eff.clip_ratio = pick('#clip_ratio', 'clip_ratio', 'num') ?? 0;
+      eff.clip_ratio = pick('#clip_ratio', 'clip_ratio', 'num') ?? 1;
       eff.text = pick('#text', 'text', 'text');
       if (p.type === 'label' && p.localize !== false && this.opts.lang) {
         eff.sourceText = eff.text;

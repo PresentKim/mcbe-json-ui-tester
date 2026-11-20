@@ -256,12 +256,8 @@ export function layoutTree(root, screen, opts = {}) {
     }
     const rect = { x, y, w, h };
     const lay = layer + (typeof node.props.layer === 'number' ? Math.trunc(node.props.layer) : 0); // relative to the parent (LAY-18)
-    place(node, rect, lay, allowsClipping ? clip : null);
-    let childClip = clip;
-    if (node.props.clips_children) {
-      const r = { x, y, w, h };
-      childClip = clip ? intersect(clip, r) : r;
-    }
+    const childClip = node.props.clips_children ? clipRect(rect, node.props.clip_offset, clip) : clip;
+    place(node, rect, lay, allowsClipping ? childClip : null);
     for (const k of node.kidsLayout || []) {
       const [sx, sy] = k.c.scrollShift || [0, 0];
       position(k.c, x + k.x + sx, y + k.y + sy, lay, childClip, allowsClipping);
@@ -402,9 +398,16 @@ export function scrollViewAt(nodes, x, y) {
   return found;
 }
 
-function intersect(a, b) {
-  const x = Math.max(a.x, b.x), y = Math.max(a.y, b.y);
-  return { x, y, w: Math.max(0, Math.min(a.x + a.w, b.x + b.w) - x), h: Math.max(0, Math.min(a.y + a.h, b.y + b.h) - y) };
+export function clipRect({ x, y, w, h }, offset, parent = null) {
+  const [ox, oy] = Array.isArray(offset) ? offset.map((v) => Number(v) || 0) : [0, 0];
+  let x0 = x + ox, y0 = y + oy, x1 = x + Math.max(0, w) - ox, y1 = y + Math.max(0, h) - oy;
+  if (parent) {
+    x0 = Math.max(x0, parent.x); y0 = Math.max(y0, parent.y);
+    x1 = Math.min(x1, parent.x + parent.w); y1 = Math.min(y1, parent.y + parent.h);
+  } else {
+    x0 = Math.max(0, x0); y0 = Math.max(0, y0);
+  }
+  return { x: x0, y: y0, w: Math.max(0, x1 - x0), h: Math.max(0, y1 - y0) };
 }
 
 export { ANCHORS };

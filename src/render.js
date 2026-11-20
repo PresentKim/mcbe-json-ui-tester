@@ -70,7 +70,7 @@ function shaded(img, color, gray) {
 
 // textures: (path) -> { url, nineslice?: { nineslice_size, base_size } } | null
 export function renderTree(stage, root, opts) {
-  const { zoom, textures, items: itemIcons, outlines, showHidden, selectedUid, onPick, onHover } = opts;
+  const { zoom, textures, items: itemIcons, outlines, showHidden, selectedUid, onPick, onHover, measured = true } = opts;
   stage.textContent = '';
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
@@ -96,12 +96,12 @@ export function renderTree(stage, root, opts) {
     const t = n.props.type;
     // engine renderers other than item icons are only placeholders: show them with the outlines
     const isItem = rendererOf(n) === 'inventory_item_renderer';
-    const drawable = t === 'image' || t === 'label' || isItem || (t === 'custom' && outlines) || n.props.debug;
+    const isGradient = rendererOf(n) === 'gradient_renderer';
+    const drawable = t === 'image' || t === 'label' || isItem || isGradient || (t === 'custom' && outlines) || n.props.debug;
     const showBox = outlines || n.uid === selectedUid;
     if (!drawable && !showBox) continue;
     const { x, y, w, h } = n.rect;
     const inset = n.clip ? clipInset(n.rect, n.clip) : [0, 0, 0, 0];
-    if (t === 'image') ratioInset(n).forEach((v, i) => { inset[i] = Math.max(inset[i], v); });
     const clipped = inset.some((v) => v > 0);
     const alpha = alphaOf(n);
     ctx.save();
@@ -115,12 +115,13 @@ export function renderTree(stage, root, opts) {
     }
     let mark = null;
     if (t === 'image') {
-      mark = drawImage(ctx, n, textures, k);
+      mark = drawImage(ctx, n, textures, k, measured);
       if (visible && n.eff?.texture) opts.onRendered?.(n);
     }
     else if (t === 'label') drawLabel(ctx, n, zoom, dpr);
+    else if (isGradient) drawGradient(ctx, n);
     else {
-      const item = isItem && itemIcons ? drawItem(ctx, n, itemIcons, textures, zoom, dpr) : false;
+      const item = isItem && itemIcons ? drawItem(ctx, n, itemIcons, textures, zoom, dpr, measured) : false;
       if (item !== false) mark = item;
       else if (t === 'custom' && !outlines) { ctx.restore(); continue; }
       else if (t === 'custom') {
@@ -175,88 +176,171 @@ function pickAt(stage, e, items, zoom, showHidden) {
   return best ? best.uid : null;
 }
 
-function drawImage(ctx, n, textures, k) {
+const FP_SLACK = 1e-6;
+export const snapRect = ({ x, y, w, h }) => ({ x: Math.trunc(x + FP_SLACK), y: Math.trunc(y + FP_SLACK), w: Math.ceil(w - FP_SLACK), h: Math.ceil(h - FP_SLACK) });
+
+function drawImage(ctx, n, textures, k, measured) {
   const tex = n.eff?.texture;
   if (!tex) return null;
   const color = css(n.eff?.color ?? n.props.color);
   const info = textures(tex);
   const { x, y, w, h } = n.rect;
-  const snap = (v) => Math.round(v * k);
-  const box = (bx = x * k, by = y * k, bw = w * k, bh = h * k) => { const x0 = Math.round(bx), y0 = Math.round(by); return [x0, y0, Math.round(bx + bw) - x0, Math.round(by + bh) - y0]; };
+  const box = snapRect({ x: x * k, y: y * k, w: w * k, h: h * k });
+  const direction = n.props.clip_direction, ratio = n.eff?.clip_ratio ?? 1;
+  if (clipDirection(direction) && ratio >= 1) return null;
+  const cutting = clipDirection(direction) && ratio > 0;
   const white = /\/(White|white)$/.test(tex);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (!info) {
     if (white || /\/Black$/.test(tex)) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const d = cutting ? clipCut(box, box, direction, ratio, false).dest : box;
+      const r = snapRect(d);
       ctx.fillStyle = white ? color || '#fff' : '#000';
-      ctx.fillRect(...box());
+      ctx.fillRect(r.x, r.y, r.w, r.h);
       return null;
     }
     return { cls: 'missing', title: `${tex} (텍스처 없음)` };
   }
+  if (info.format) return { cls: 'missing', title: `${tex}${info.format} (이 형식은 브라우저에서 그리지 않는다)` };
   const img = imageOf(info.url);
   if (!img) return null;
-  const iw = img.naturalWidth, ih = img.naturalHeight;
-  const src = shaded(img, color && !white ? color : null, n.props.grayscale === true);
+  const pic = shaded(img, color && !white ? color : null, n.props.grayscale === true);
   ctx.imageSmoothingEnabled = n.props.bilinear === true;
-  const ns = info.nineslice;
-  if (ns && ns.nineslice_size !== undefined) {
-    // nineslice_size is in base_size units (the sidecar's texture size), not image pixels (LAY-27)
-    const s = (Array.isArray(ns.nineslice_size) ? ns.nineslice_size : [ns.nineslice_size, ns.nineslice_size, ns.nineslice_size, ns.nineslice_size]).slice();
-    const base = Array.isArray(ns.base_size) ? ns.base_size : ns.base_size ? [ns.base_size, ns.base_size] : [iw, ih];
-    // Slices that meet or cross on an axis leave nothing but the corners, while the game still
-    // covers the whole control with the texture (measured: vanilla ScrollRail, 1×1 with
-    // nineslice_size 1, is a solid dark rail in game). That axis is then stretched.
-    if (s[0] + s[2] >= base[0]) s[0] = s[2] = 0;
-    if (s[1] + s[3] >= base[1]) s[1] = s[3] = 0;
-    const kx = iw / base[0], ky = ih / base[1];
-    const f = Math.min(1, s[0] + s[2] > 0 ? w / (s[0] + s[2]) : 1, s[1] + s[3] > 0 ? h / (s[1] + s[3]) : 1);
-    const sx = [0, s[0] * kx, iw - s[2] * kx, iw], sy = [0, s[1] * ky, ih - s[3] * ky, ih];
-    const dx = [x, x + s[0] * f, x + w - s[2] * f, x + w].map(snap), dy = [y, y + s[1] * f, y + h - s[3] * f, y + h].map(snap);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    for (let i = 0; i < 3; i++) {
-      for (let j = 0; j < 3; j++) {
-        if (sx[i + 1] <= sx[i] || sy[j + 1] <= sy[j] || dx[i + 1] <= dx[i] || dy[j + 1] <= dy[j]) continue;
-        ctx.drawImage(src, sx[i], sy[j], sx[i + 1] - sx[i], sy[j + 1] - sy[j], dx[i], dy[j], dx[i + 1] - dx[i], dy[j + 1] - dy[j]);
-      }
-    }
+  const src = uvRect(n.eff?.uv ?? n.props.uv, n.eff?.uv_size ?? n.props.uv_size, img.naturalWidth, img.naturalHeight);
+  const paint = (s, d, snap = true) => {
+    const r = snap ? snapRect(d) : d;
+    if (!(r.w > 0 && r.h > 0 && s.w && s.h)) return;
+    ctx.drawImage(pic, Math.min(s.x, s.x + s.w), Math.min(s.y, s.y + s.h), Math.abs(s.w), Math.abs(s.h), r.x, r.y, r.w, r.h);
+  };
+  const nine = nineSlices(n.props.nineslice_size, info.nineslice);
+  if (nine) {
+    for (const p of ninePieces(box, src, nine.slices, nine.base, k, measured)) paint(p.src, p.dest, false);
     return null;
   }
-  const tiled = n.props.tiled;
-  const repeat = { x: 'repeat-x', y: 'repeat-y', xy: 'repeat', yx: 'repeat' }[tiled] ?? (tiled === true ? 'repeat' : null);
-  const uvAt = n.eff?.uv ?? n.props.uv, uvSize = n.eff?.uv_size ?? n.props.uv_size;
-  const uv = Array.isArray(uvAt) && Array.isArray(uvSize);
-  if (repeat && !uv) {
-    const pattern = ctx.createPattern(src, repeat);
-    pattern.setTransform(new DOMMatrix([1, 0, 0, 1, x, y]));
-    ctx.fillStyle = pattern;
-    ctx.fillRect(x, y, w, h);
-    return null;
-  }
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (uv) {
-    const [u, v] = uvAt, [uw, vh] = uvSize;
-    ctx.drawImage(src, u, v, uw, vh, ...box());
-  } else if (n.props.keep_ratio !== false) {
-    // keep_ratio (on by default) fits the texture inside, centred; with fill it covers and is cut
-    // (ANI-23; measured in game: a 6×27 tree strip in a 4×23 image is 4×18, 2.5 px from each end)
-    const [bx, by, bw, bh] = box();
-    const f = (n.props.fill === true ? Math.max : Math.min)(bw / iw, bh / ih);
-    ctx.beginPath();
-    ctx.rect(bx, by, bw, bh);
-    ctx.clip();
-    ctx.drawImage(src, ...box(bx + (bw - iw * f) / 2, by + (bh - ih * f) / 2, iw * f, ih * f));
-  } else {
-    ctx.drawImage(src, ...box());
-  }
+  const axes = tileAxes(n.props.tiled);
+  const [tsx, tsy] = Array.isArray(n.props.tiled_scale) ? n.props.tiled_scale.map(Number) : [1, 1];
+  const tile = () => tileCells(box, src, axes, src.w * tsx * k, src.h * tsy * k).forEach((c) => paint(c.src, c.dest));
+  if (cutting) {
+    const cut = clipCut(box, src, direction, ratio, n.props.clip_pixelperfect !== false);
+    if (axes) {
+      const r = snapRect(cut.dest);
+      ctx.beginPath();
+      ctx.rect(r.x, r.y, r.w, r.h);
+      ctx.clip();
+      tile();
+    } else paint(cut.src, cut.dest);
+  } else if (axes) tile();
+  else if (n.props.fill === true) paint(fillSource(src, box.w, box.h), box);
+  else if (n.props.keep_ratio !== false) paint(src, keepRatioRect(box, src.w, src.h));
+  else paint(src, box);
   return null;
 }
 
-// clip_ratio is the part cut away, measured from the clip_direction side (ANI-03, CN-54)
-function ratioInset(n) {
-  const ratio = n.eff?.clip_ratio ?? 0;
-  if (!(ratio > 0)) return [0, 0, 0, 0];
-  const r = Math.min(1, ratio), { w, h } = n.rect;
-  return { left: [0, r * w, 0, 0], right: [0, 0, 0, r * w], up: [0, 0, r * h, 0], down: [r * h, 0, 0, 0] }[n.props.clip_direction || 'left'] || [0, 0, 0, 0];
+export function uvRect(uv, uvSize, iw, ih) {
+  const [u, v] = Array.isArray(uv) ? [Number(uv[0]) || 0, Number(uv[1]) || 0] : [0, 0];
+  const [uw, vh] = Array.isArray(uvSize) ? [Number(uvSize[0]) || 0, Number(uvSize[1]) || 0] : [0, 0];
+  return uw || vh ? { x: u, y: v, w: uw, h: vh } : { x: u, y: v, w: iw, h: ih };
+}
+
+const CLIP_DIRECTIONS = { left: 1, right: 2, up: 3, down: 4, center: 5 };
+export const clipDirection = (d) => CLIP_DIRECTIONS[d] ?? 0;
+
+export function clipCut(dest, src, direction, ratio, pixelPerfect = true) {
+  const dir = clipDirection(direction);
+  if (!dir || !(ratio > 0)) return { dest, src };
+  if (ratio >= 1) return null;
+  const axisRatio = (len) => (pixelPerfect && len > 0 ? Math.floor(ratio * len) / len : ratio);
+  const shift = dir === 2 || dir === 4 ? 1 : dir === 5 ? 0.5 : 0;
+  const out = { dest: { ...dest }, src: { ...src } };
+  const cut = (pos, size, r) => {
+    for (const rect of [out.dest, out.src]) {
+      rect[pos] += rect[size] * r * shift;
+      rect[size] *= 1 - r;
+    }
+  };
+  if (dir === 1 || dir === 2 || dir === 5) cut('x', 'w', axisRatio(Math.abs(src.w)));
+  if (dir === 3 || dir === 4 || dir === 5) cut('y', 'h', axisRatio(Math.abs(src.h)));
+  return out;
+}
+
+const EPSILON = 1.1920929e-7;
+
+export function keepRatioRect(dest, uw, vh) {
+  const fx = dest.w / uw, fy = dest.h / vh;
+  if (!(Math.abs(fx - fy) > EPSILON)) return dest;
+  const f = Math.min(fx, fy), w = uw * f, h = vh * f;
+  return { x: dest.x + (dest.w - w) * 0.5, y: dest.y + (dest.h - h) * 0.5, w, h };
+}
+
+export function fillSource(src, w, h) {
+  if (!(w > 0 && h > 0 && src.w && src.h)) return src;
+  const aspect = w / h;
+  if (src.w / src.h > aspect) {
+    const sw = src.h * aspect;
+    return { ...src, x: src.x + (src.w - sw) * 0.5, w: sw };
+  }
+  const sh = src.w / aspect;
+  return { ...src, y: src.y + (src.h - sh) * 0.5, h: sh };
+}
+
+export const tileAxes = (t) => (t === true ? 3 : { x: 1, y: 2, xy: 3, yx: 3 }[t] ?? 0);
+
+const MAX_TILES = 100000;
+
+export function tileCells(dest, src, axes, cellW, cellH) {
+  const cw = axes === 2 ? dest.w : cellW, ch = axes === 1 ? dest.h : cellH;
+  if (!(cw > 0 && ch > 0)) return [];
+  if ((dest.w / cw) * (dest.h / ch) > MAX_TILES) return [{ dest, src }];
+  const cells = [];
+  for (let ty = 0; ty < dest.h; ty += ch) {
+    const fy = Math.min(1, (dest.h - ty) / ch);
+    for (let tx = 0; tx < dest.w; tx += cw) {
+      const fx = Math.min(1, (dest.w - tx) / cw);
+      cells.push({ dest: { x: dest.x + tx, y: dest.y + ty, w: cw * fx, h: ch * fy }, src: { x: src.x, y: src.y, w: src.w * fx, h: src.h * fy } });
+    }
+  }
+  return cells;
+}
+
+const sliceArray = (v) => (typeof v === 'number' ? [v, v, v, v] : Array.isArray(v) && v.length === 4 ? v.map(Number) : null);
+
+export function nineSlices(controlSlices, sidecar) {
+  const side = sidecar && !sidecar.meta ? sidecar : null;
+  const own = sliceArray(controlSlices);
+  const slices = own && own.some((v) => v) ? own : sliceArray(side?.nineslice_size);
+  if (!slices) return null;
+  const base = Array.isArray(side?.base_size) && side.base_size.length >= 2 ? side.base_size.map(Number) : null;
+  return { slices, base };
+}
+
+export function ninePieces(dest, src, [l, t, r, b], base, k = 1, measured = false) {
+  const kx = base?.[0] ? src.w / base[0] : 1, ky = base?.[1] ? src.h / base[1] : 1;
+  let [sl, sr] = dest.w > 0 ? [l, r] : [0, 0], [st, sb] = dest.h > 0 ? [t, b] : [0, 0];
+  if (measured && (sl + sr) * kx >= src.w) sl = sr = 0;
+  if (measured && (st + sb) * ky >= src.h) st = sb = 0;
+  const sx = [src.x, src.x + sl * kx, src.x + src.w - sr * kx, src.x + src.w];
+  const sy = [src.y, src.y + st * ky, src.y + src.h - sb * ky, src.y + src.h];
+  const dx = [dest.x, dest.x + sl * k, dest.x + dest.w - sr * k, dest.x + dest.w];
+  const dy = [dest.y, dest.y + st * k, dest.y + dest.h - sb * k, dest.y + dest.h];
+  const pieces = [];
+  for (let j = 0; j < 3; j++) {
+    for (let i = 0; i < 3; i++) {
+      const d = { x: dx[i], y: dy[j], w: dx[i + 1] - dx[i], h: dy[j + 1] - dy[j] };
+      const s = { x: sx[i], y: sy[j], w: sx[i + 1] - sx[i], h: sy[j + 1] - sy[j] };
+      if (d.w > 0 && d.h > 0 && s.w && s.h) pieces.push({ dest: d, src: s });
+    }
+  }
+  return pieces;
+}
+
+function drawGradient(ctx, n) {
+  const { x, y, w, h } = n.rect;
+  const horizontal = n.props.gradient_direction === 'horizontal';
+  const g = ctx.createLinearGradient(x, y, horizontal ? x + w : x, horizontal ? y : y + h);
+  g.addColorStop(0, css(n.props.color1) || '#fff');
+  g.addColorStop(1, css(n.props.color2) || '#fff');
+  ctx.fillStyle = g;
+  ctx.fillRect(x, y, w, h);
 }
 
 function clipInset({ x, y, w, h }, c) {
@@ -264,7 +348,7 @@ function clipInset({ x, y, w, h }, c) {
 }
 
 // #item_id_aux = numeric ID × 65536 + data (ANI-06); the atlas maps the ID to its icon textures.
-function drawItem(ctx, n, items, textures, zoom, dpr) {
+function drawItem(ctx, n, items, textures, zoom, dpr, measured) {
   const v = n.bag?.get('#item_id_aux') ?? n.bag?.get('#item_renderer_data');
   if (!v || (v.k !== 'int' && v.k !== 'num')) return false;
   const aux = Math.trunc(v.v);
@@ -275,8 +359,9 @@ function drawItem(ctx, n, items, textures, zoom, dpr) {
   if (!entry || (!entry.t && !entry.b && !entry.p && !entry.m)) return { cls: 'renderer', title, text: entry ? entry.n : String(id) };
   // The icon fills the renderer's square, centred (measured in game 2026-10-23: a book in a 22 px
   // card renderer at GUI scale 4 is 88 screen px wide, 5.5 px per texel, not rounded down to 5).
-  const s = Math.min(n.rect.w, n.rect.h) * zoom;
-  const bx = n.rect.x * zoom + (n.rect.w * zoom - s) / 2, by = n.rect.y * zoom + (n.rect.h * zoom - s) / 2;
+  // The CN model follows the client code: width / 16 per texel from the top-left corner.
+  const s = (measured ? Math.min(n.rect.w, n.rect.h) : n.rect.w) * zoom;
+  const bx = n.rect.x * zoom + (measured ? (n.rect.w * zoom - s) / 2 : 0), by = n.rect.y * zoom + (measured ? (n.rect.h * zoom - s) / 2 : 0);
   const image = (p) => { const u = textures(p)?.url; return u ? imageOf(u) : null; };
   const face = (src, [sx, sy, sw, sh], dw, dh, ua, va, o) => {
     ctx.setTransform(dpr * ua[0], dpr * ua[1], dpr * va[0], dpr * va[1], dpr * (bx + o[0]), dpr * (by + o[1]));
