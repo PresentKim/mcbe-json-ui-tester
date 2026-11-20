@@ -2,6 +2,7 @@
 // Order and merge rules: CN-03..CN-13, FILE-20..22, MOD-01..05, MOD-17..19, MOD-23..25.
 
 import { parseJsonc } from './jsonc.js';
+import { t } from '../i18n.js';
 
 export const MOD_OPS = ['insert_back', 'insert_front', 'insert_after', 'insert_before', 'move_back', 'move_front', 'move_after', 'move_before', 'swap', 'remove', 'replace'];
 
@@ -48,7 +49,7 @@ export function buildCatalog(packs, opts = {}) {
   }
   for (const p of packs) for (const f of Object.keys(p.files)) {
     if (/^ui\/.+/.test(f) && !paths.has(f) && !f.endsWith('_ui_defs.json') && !f.endsWith('_global_variables.json') && /\.(json|r4ui|uidx)$/i.test(f)) {
-      diag(p.vanilla ? 'info' : 'warn', `${f}: _ui_defs.json에 등록되지 않아 로드되지 않는다 [FILE-01]`, p.name);
+      diag(p.vanilla ? 'info' : 'warn', t('{f}: not listed in _ui_defs.json, so it is not loaded [FILE-01]', { f }), p.name);
     }
   }
 
@@ -62,16 +63,16 @@ export function buildCatalog(packs, opts = {}) {
       const where = `${pack.name}:${path}`;
       const r = parseJsonc(text);
       if (r.error) {
-        diag('error', `JSON UI parse failure: ${r.error}. 오류 앞까지만 로드 [FILE-30]`, where);
+        diag('error', t('JSON UI parse failure: {error}. Only the part before the error is loaded [FILE-30]', { error: r.error }), where);
         if (!seenOnce) firstFailed = true;
       } else if (firstFailed) {
-        diag('warn', '같은 경로의 첫 파일이 실패해 이 덮어쓰기는 받지 않는다 [CN-02]', where);
+        diag('warn', t('The first file at this path failed, so this override is not taken [CN-02]'), where);
         continue;
       }
       const doc = r.value;
       let ns = doc.namespace || pathNamespace.get(path);
       if (!ns) {
-        diag('error', 'namespace가 없다', where);
+        diag('error', t('No namespace'), where);
         continue;
       }
       if (!pathNamespace.has(path)) pathNamespace.set(path, ns);
@@ -79,7 +80,7 @@ export function buildCatalog(packs, opts = {}) {
       seenOnce = true;
       for (const [key, body] of Object.entries(doc)) {
         if (key === 'namespace') continue;
-        if (!isObj(body)) { diag('warn', `${key}: 정의가 객체가 아님`, where); continue; }
+        if (!isObj(body)) { diag('warn', t('{key}: the definition is not an object', { key }), where); continue; }
         if (key.includes('/')) { applyPathKey(defs, ns, key, body, where, diag); continue; }
         let { name, base } = splitKey(key);
         let defNs = ns;
@@ -88,7 +89,7 @@ export function buildCatalog(packs, opts = {}) {
           const dot = name.indexOf('.');
           defNs = name.slice(0, dot) || ns;
           name = name.slice(dot + 1);
-          diag('warn', `${key}: '@' 없는 키의 점은 namespace 구분자로 읽힌다 [FILE-32]`, where);
+          diag('warn', t("{key}: a dot in a key without '@' is read as a namespace separator [FILE-32]", { key }), where);
         }
         const id = `${defNs}.${name}`;
         const existing = defs.get(id);
@@ -97,7 +98,7 @@ export function buildCatalog(packs, opts = {}) {
         delete own.modifications;
         if (!existing) {
           if (mods && !samePathRedef) {
-            diag('error', `${id}: Unknown property [modifications] — modifications는 바닐라와 같은 경로 파일에서만 동작한다 [MOD-02]`, where);
+            diag('error', t('{id}: Unknown property [modifications]. modifications only work in a file at the same path as the vanilla file [MOD-02]', { id }), where);
           }
           if (!base && !own.type) {
             // may be completed by a later same-path redefinition; checked in resolve
@@ -108,11 +109,11 @@ export function buildCatalog(packs, opts = {}) {
         }
         if (existing.path !== path) {
           if (opts.measured && existing.vanilla) {
-            diag('warn', `${id}: 다른 경로 파일의 바닐라 재선언은 무시된다 [FILE-22, MOD-02]`, where);
+            diag('warn', t('{id}: a vanilla redeclaration in a file at another path is ignored [FILE-22, MOD-02]', { id }), where);
             continue;
           }
           if (opts.measured) {
-            diag('warn', `${id}: 다른 경로에서 다시 정의해 원래 정의를 대체한다 [MOD-02]`, where);
+            diag('warn', t('{id}: redefined at another path, replacing the original definition [MOD-02]', { id }), where);
             defs.set(id, { id, ns: defNs, name, base: base ? qualify(base, defNs) : null, props: own, path, pack: pack.name, vanilla: false, history: [...existing.history, where] });
             if (mods) diag('error', `${id}: Unknown property [modifications] [MOD-02]`, where);
             continue;
@@ -121,7 +122,7 @@ export function buildCatalog(packs, opts = {}) {
         // same-path redefinition: merge property by property (FILE-21, CN-05/06)
         const qBase = base ? qualify(base, defNs) : null;
         if (qBase && qBase !== existing.base) {
-          diag('info', `${id}: 다른 @base로 재선언해 기존 정의를 버린다 [MOD-19]`, where);
+          diag('info', t('{id}: redeclared with another @base, dropping the existing definition [MOD-19]', { id }), where);
           existing.props = own;
           existing.base = qBase;
         } else {
@@ -139,7 +140,7 @@ export function buildCatalog(packs, opts = {}) {
       const b = defs.get(id);
       if (!b) break;
       if (Array.isArray(b.props[arrayName]) && b.props[arrayName].length) {
-        diag('warn', `${def.id}: 상속만 받은 '${arrayName}'(${b.id})에 넣어 상속 내용이 가려진다 [MOD-04]`, where);
+        diag('warn', t("{id}: inserting into the inherited '{array}' ({base}) hides the inherited content [MOD-04]", { id: def.id, array: arrayName, base: b.id }), where);
         break;
       }
       id = b.base && !b.base.startsWith('$') ? b.base : null;
@@ -180,22 +181,22 @@ function selectIndex(arr, original, sel, isControls) {
 }
 
 export function applyModifications(def, mods, where, diag, opts = {}) {
-  if (!Array.isArray(mods)) { diag('error', `${def.id}: modifications는 배열이어야 한다`, where); return; }
+  if (!Array.isArray(mods)) { diag('error', t('{id}: modifications must be an array', { id: def.id }), where); return; }
   const props = def.props;
   const originals = new Map();
   for (const m of mods) {
     if (!isObj(m)) continue;
     let arrayName = m.array_name;
     if (!arrayName && typeof m.control_name === 'string') arrayName = 'controls'; // NB-03
-    if (!arrayName) { diag('error', `${def.id}: array_name이 없다`, where); continue; }
+    if (!arrayName) { diag('error', t('{id}: no array_name', { id: def.id }), where); continue; }
     const op = m.operation;
-    if (!MOD_OPS.includes(op)) { diag('error', `${def.id}: 알 수 없는 operation '${op}' (엔진 연산은 11개) [MOD-23]`, where); continue; }
+    if (!MOD_OPS.includes(op)) { diag('error', t("{id}: unknown operation '{op}' (the engine has 11 operations) [MOD-23]", { id: def.id, op }), where); continue; }
     if (arrayName === 'variables') {
-      diag('warn', `${def.id}: variables 대상 modifications는 게임에서 무시됐다 [MOD-03, C-64]`, where);
+      diag('warn', t('{id}: modifications on variables were ignored in game [MOD-03, C-64]', { id: def.id }), where);
       if (opts.measured) continue;
     }
     if (!Array.isArray(props[arrayName])) {
-      if (props[arrayName] !== undefined && !Array.isArray(props[arrayName])) { diag('error', `${def.id}.${arrayName}: 배열이 아니다`, where); continue; }
+      if (props[arrayName] !== undefined && !Array.isArray(props[arrayName])) { diag('error', t('{id}.{array}: not an array', { id: def.id, array: arrayName }), where); continue; }
       // the definition does not declare the array itself: a new array masks the inherited one (MOD-04).
       // Whether the base really has that array is checked once every file is loaded.
       if (def.base) (diag.pending ||= []).push({ def, arrayName, where });
@@ -209,7 +210,7 @@ export function applyModifications(def, mods, where, diag, opts = {}) {
     const idx = () => selectIndex(arr, original, { control_name: m.control_name, where: m.where }, isControls);
     const targetSel = typeof m.target_control === 'string' ? { control_name: m.target_control } : isObj(m.target) ? { where: m.target } : null; // MOD-24
     const tIdx = () => (targetSel ? selectIndex(arr, original, targetSel, isControls) : -1);
-    const miss = () => diag('warn', `${def.id}: ${op} 대상(${m.control_name ?? JSON.stringify(m.where)})을 찾지 못했다`, where);
+    const miss = () => diag('warn', t('{id}: {op} target ({target}) not found', { id: def.id, op, target: m.control_name ?? JSON.stringify(m.where) }), where);
     switch (op) {
       case 'insert_back': if (values) arr.push(...values); break;
       case 'insert_front': if (values) arr.unshift(...values); break;
@@ -220,7 +221,7 @@ export function applyModifications(def, mods, where, diag, opts = {}) {
       case 'remove': {
         const i = idx(); if (i < 0) { miss(); break; }
         arr.splice(i, 1);
-        if (isControls && def.base && !def.vanilla) diag('warn', `${def.id}: 컨트롤 remove — 상속받은 자식이면 게임에서는 이 파일의 수정 전체가 무효가 된다 [MOD-05]`, where);
+        if (isControls && def.base && !def.vanilla) diag('warn', t('{id}: control remove. If the child is inherited, the game drops every modification in this file [MOD-05]', { id: def.id }), where);
         break;
       }
       case 'replace': {
@@ -253,7 +254,7 @@ export function applyModifications(def, mods, where, diag, opts = {}) {
 function applyPathKey(defs, ns, key, body, where, diag) {
   const parts = key.split('/');
   const def = defs.get(`${ns}.${parts[0]}`);
-  if (!def) { diag('warn', `${key}: 경로 키의 시작 정의가 없다 [FILE-27]`, where); return; }
+  if (!def) { diag('warn', t('{key}: the path key has no starting definition [FILE-27]', { key }), where); return; }
   let node = def.props;
   for (const seg of parts.slice(1)) {
     const kids = Array.isArray(node.controls) ? node.controls : [];

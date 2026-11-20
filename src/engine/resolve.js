@@ -4,6 +4,7 @@
 import { evaluate, fromJson, toJson, truthy, NULL } from './expr.js';
 import { splitKey, qualify } from './catalog.js';
 import { CONTROL_TYPES, RENDERERS } from './controls.js';
+import { t } from '../i18n.js';
 
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 
@@ -53,14 +54,14 @@ export function scopeVar(scope) {
 export function flatten(cat, id, diag, scope, seen = new Set()) {
   const def = cat.defs.get(id);
   if (!def) return null;
-  if (seen.has(id)) { diag('error', `상속 순환: ${[...seen, id].join(' → ')}`, id); return { props: {}, chain: [id], propNs: {}, pathKeys: [] }; }
+  if (seen.has(id)) { diag('error', t('Inheritance cycle: {chain}', { chain: [...seen, id].join(' > ') }), id); return { props: {}, chain: [id], propNs: {}, pathKeys: [] }; }
   seen.add(id);
   let base = null;
   if (def.base) {
     let baseId = def.base;
     if (baseId.startsWith('$')) {
       const v = scope ? scope.lookup(baseId) : undefined;
-      if (typeof v !== 'string') { diag('warn', `@${baseId}: 변수 기반이 문자열이 아니다 [CN-25]`, id); baseId = null; }
+      if (typeof v !== 'string') { diag('warn', t('@{base}: the variable base is not a string [CN-25]', { base: baseId }), id); baseId = null; }
       else baseId = qualify(v.replace(/^@/, ''), def.ns);
     }
     if (baseId) {
@@ -105,7 +106,7 @@ export function substitute(value, scope, ctx) {
         return out;
       }
       const r = evaluate(value, { variable: scopeVar(scope) });
-      if (r.error) { ctx.diag('warn', `변수 식 실패: ${value}`); return value; }
+      if (r.error) { ctx.diag('warn', t('Variable expression failed: {value}', { value })); return value; }
       return toJson(r.value);
     }
     return value;
@@ -124,11 +125,11 @@ function forceEvaluate(raw, scope) {
   for (let depth = 0; depth < 8 && typeof v === 'string'; depth++) {
     if (v.startsWith('$') && !v.includes(' ')) {
       const found = scope.lookup(v);
-      if (found === undefined) { note = `미설정 ${v}는 글자로 남는다 [FILE-35]`; break; }
+      if (found === undefined) { note = t('unset {v} stays as text [FILE-35]', { v }); break; }
       v = found;
     } else if (v.startsWith('(')) {
       const r = evaluate(v, { variable: scopeVar(scope) });
-      if (r.error) return { value: NULL, note, error: `식 실패: ${v}` };
+      if (r.error) return { value: NULL, note, error: t('Expression failed: {v}', { v }) };
       if (r.value.k !== 'str' || !r.value.v.startsWith('(')) return { value: r.value, note };
       v = r.value.v;
     } else break;
@@ -194,7 +195,7 @@ export function instantiate(cat, ref, name, inline, parentScope, parent, env, pe
     if (typeof props.ignored === 'string') {
       const m = props.ignored.match(/\$[\w.|]+/g) || [];
       for (const v of m) if (Object.keys(props).includes(v) || Object.keys(props).includes(v + '|default')) {
-        node.diags.push({ level: 'warn', msg: `ignored가 읽는 ${v}를 이 컨트롤이 선언했지만 자기 ignored에는 닿지 않는다 [FILE-34]` });
+        node.diags.push({ level: 'warn', msg: t('This control declares {v}, which its ignored reads, but its own declaration does not reach its own ignored [FILE-34]', { v }) });
       }
     }
   }
@@ -208,7 +209,7 @@ export function instantiate(cat, ref, name, inline, parentScope, parent, env, pe
   for (const b of blocks) {
     if (!isObj(b)) continue;
     const req = forceEvaluate(b.requires ?? null, frame);
-    if (req.note) ndiag('warn', `requires: ${req.note}. Windows 1.26.65에서 이렇게 쓴 서버 폼 창은 Expected variable not found 경고를 34만 줄 넘게 남기고 게임이 멈췄다(실측)`);
+    if (req.note) ndiag('warn', t('requires: {note}. On Windows 1.26.65 a server form window written like this logged over 340,000 "Expected variable not found" warnings and froze the game (measured)', { note: req.note }));
     if (req.error || !truthy(req.value)) continue;
     node.appliedVariables.push(b.requires ?? '(always)');
     for (const [k, v] of Object.entries(b)) if (k.startsWith('$')) frame.declare(k, v);
@@ -249,7 +250,7 @@ export function instantiate(cat, ref, name, inline, parentScope, parent, env, pe
       if (key.startsWith('$') && !key.includes('@')) {
         // the whole key is a variable holding "name@ns.def" (CN-22)
         const v = frame.lookup(key);
-        if (typeof v !== 'string') { ndiag('warn', `자식 키 ${key}의 변수가 없다`); continue; }
+        if (typeof v !== 'string') { ndiag('warn', t('The variable in child key {key} is not defined', { key })); continue; }
         key = v;
       }
       let { name: cname, base } = splitKey(key);
@@ -266,9 +267,9 @@ export function instantiate(cat, ref, name, inline, parentScope, parent, env, pe
     }
   }
   for (const p of pending) if (p.path.length > 0 && !node.children.some((c) => c.name === p.path[0])) {
-    ndiag('warn', `경로 키 대상 '${p.path.join('/')}'가 없다 [FILE-27]`);
+    ndiag('warn', t("The path key target '{path}' does not exist [FILE-27]", { path: p.path.join('/') }));
   }
-  if (sctx.unresolved.size) node.diags.push({ level: 'info', msg: `정해지지 않은 변수: ${[...sctx.unresolved].join(', ')}` });
+  if (sctx.unresolved.size) node.diags.push({ level: 'info', msg: t('Unresolved variables: {list}', { list: [...sctx.unresolved].join(', ') }) });
   return node;
 }
 

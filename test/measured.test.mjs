@@ -92,10 +92,10 @@ test('touch slot press picks first and swaps with the next slot; auto place move
   const btn = (to) => ({ type: 'button', button_mappings: [{ from_button_id: 'button.menu_select', to_button_id: to, mapping_type: 'pressed' }] });
   const defs = { r: { type: 'panel', controls: [{ take: btn('button.container_take_all_place_all') }, { auto: btn('button.container_auto_place') }] } };
   const touch = run(defs, {}, { measured: true }, { platform: PLATFORMS.pocket });
-  assert.match(touch.s.press(touch.byName.take).msg, /맞바꾼다/);
-  assert.match(touch.s.press(touch.byName.auto).msg, /바로 옮긴다/);
+  assert.match(touch.s.press(touch.byName.take).msg, /swaps/);
+  assert.match(touch.s.press(touch.byName.auto).msg, /moves at once/);
   const desk = run(defs, {}, { measured: true }, { platform: PLATFORMS.desktop });
-  assert.doesNotMatch(desk.s.press(desk.byName.take).msg, /맞바꾼다/);
+  assert.doesNotMatch(desk.s.press(desk.byName.take).msg, /swaps/);
 });
 
 test('item and player renderers above an ancestor layer sum of 94 are reported; horse renderer is not', () => {

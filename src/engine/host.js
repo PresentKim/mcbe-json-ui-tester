@@ -4,10 +4,10 @@
 import { num } from './expr.js';
 
 export const SCREENS = {
-  server_form: { root: 'server_form.third_party_server_screen', label: '서버 폼 (액션/모달)' },
+  server_form: { root: 'server_form.third_party_server_screen', label: 'Server form (action/modal)' },
   hud: { root: 'hud.hud_screen', label: 'HUD' },
-  chest: { root: 'chest.small_chest_screen', label: '상자 화면' },
-  npc: { root: 'npc_interact.npc_screen', label: 'NPC 대화' },
+  chest: { root: 'chest.small_chest_screen', label: 'Chest screen' },
+  npc: { root: 'npc_interact.npc_screen', label: 'NPC dialogue' },
 };
 
 export const PLATFORMS = {

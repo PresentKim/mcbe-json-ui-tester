@@ -146,7 +146,7 @@ test('a mapping without from_button_id is a hover notification, not a click', ()
   const { s, byName, hover } = run(panel([{ a: btn({ button_mappings: [{ to_button_id: 'hint', mapping_type: 'pressed' }] }) }]));
   assert.equal(s.press(byName.a).kind, 'none');
   assert.deepEqual(hover(5, 5).notes.map((n) => n.to), ['hint']);
-  assert.match(hover(150, 150).notes[0].msg, /나감/);
+  assert.match(hover(150, 150).notes[0].msg, /leave/);
 });
 
 test('a global mapping fires without hover', () => {

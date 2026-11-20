@@ -2,6 +2,7 @@
 import { walk } from './engine/bind.js';
 import { modelFaces, modelBounds, sphereFit } from './engine/geometry.js';
 import { rendererOf } from './engine/controls.js';
+import { t } from './i18n.js';
 
 const COLOR_CODES = {
   0: '#000000', 1: '#0000AA', 2: '#00AA00', 3: '#00AAAA', 4: '#AA0000', 5: '#AA00AA', 6: '#FFAA00', 7: '#AAAAAA',
@@ -199,9 +200,9 @@ function drawImage(ctx, n, textures, k, measured) {
       ctx.fillRect(r.x, r.y, r.w, r.h);
       return null;
     }
-    return { cls: 'missing', title: `${tex} (텍스처 없음)` };
+    return { cls: 'missing', title: t('{tex} (no texture)', { tex }) };
   }
-  if (info.format) return { cls: 'missing', title: `${tex}${info.format} (이 형식은 브라우저에서 그리지 않는다)` };
+  if (info.format) return { cls: 'missing', title: t('{tex}{format} (the browser cannot draw this format)', { tex, format: info.format }) };
   const img = imageOf(info.url);
   if (!img) return null;
   const pic = shaded(img, color && !white ? color : null, n.props.grayscale === true);

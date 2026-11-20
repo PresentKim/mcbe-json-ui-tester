@@ -1,6 +1,7 @@
 import { flatten, substitute, pathOf } from './resolve.js';
 import { qualify } from './catalog.js';
 import { parseSize } from './size.js';
+import { t } from '../i18n.js';
 
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 const PI = Math.PI;
@@ -165,7 +166,7 @@ export class AnimRuntime {
       if (inst) this.add(comp, inst);
     }
     for (const el of list || []) {
-      if (typeof el === 'string' && !el.startsWith('@')) this.diag(node, `anims의 '${el}'가 @로 시작하지 않는다. 엔진은 경고를 남기고 이름으로 찾는다`);
+      if (typeof el === 'string' && !el.startsWith('@')) this.diag(node, t("'{el}' in anims does not start with @. The engine logs a warning and looks it up by name", { el }));
       if (typeof el !== 'string' && !isObj(el)) continue;
       const inst = this.build(comp, el);
       if (inst) this.add(comp, inst);
@@ -188,16 +189,16 @@ export class AnimRuntime {
         key = qualify(r.replace(/^@/, ''), ns);
         if (names.has(key)) return names.get(key);
         const flat = flatten(this.cat, key, () => {}, node.scope);
-        if (!flat) { this.diag(node, `애니메이션 '${r}'를 찾지 못했다`); return null; }
+        if (!flat) { this.diag(node, t("Animation '{r}' not found", { r })); return null; }
         raw = substitute(flat.props, node.scope, ctx);
         defNs = flat.ns || ns;
       } else raw = substitute(r, node.scope, ctx);
       const def = parseDef(raw);
-      if (!def) { this.diag(node, `anim_type '${raw.anim_type ?? ''}'은 엔진이 모르는 종류라 애니메이션을 만들지 않는다`); return null; }
+      if (!def) { this.diag(node, t("anim_type '{type}' is unknown to the engine, so no animation is made", { type: raw.anim_type ?? '' })); return null; }
       const inst = this.instance(def, node);
       if (key) names.set(key, inst);
       if (def.next) {
-        if (!def.next.startsWith('@')) this.diag(node, `next '${def.next}'가 @로 시작하지 않는다`);
+        if (!def.next.startsWith('@')) this.diag(node, t("next '{next}' does not start with @", { next: def.next }));
         inst.next = make(def.next, defNs);
       }
       return inst;

@@ -6,6 +6,7 @@ import { parseSize, resolveTerms, usesChildren, usesSiblings } from './size.js';
 import { layoutText } from './font.js';
 import { isAnimRef } from './anim.js';
 import { bool } from './expr.js';
+import { t } from '../i18n.js';
 
 const FONT_SCALE = { small: 0.5, normal: 1, large: 2, extra_large: 4 };
 
@@ -419,11 +420,11 @@ export function findRendererIssues(nodes) {
     if (n.props.type !== 'custom' || !n.effVisible) continue;
     const r = n.props.renderer;
     if ((r === 'inventory_item_renderer' || r === 'live_player_renderer') && n.layerAbs > 94) {
-      out.push({ node: n, level: n.layerAbs >= 99 ? 'warn' : 'info', msg: `${r}의 조상 레이어 합이 ${n.layerAbs}다. 상자 화면 실측에서 합 94까지는 그려지고 99부터 그려지지 않았다(95~98은 시험하지 않음). 이 도구의 합은 바닐라 조상 레이어까지 더한 값이다 [ANI-38]` });
+      out.push({ node: n, level: n.layerAbs >= 99 ? 'warn' : 'info', msg: t('The ancestor layer sum of {r} is {sum}. In a measured chest screen it drew up to a sum of 94 and not from 99 (95 to 98 not tested). This tool sums vanilla ancestor layers too [ANI-38]', { r, sum: n.layerAbs }) });
     }
     const id = n.bag?.get('#entity_id');
     if (r === 'live_horse_renderer' && id && (id.k === 'int' || id.k === 'num')) {
-      out.push({ node: n, level: 'warn', msg: `#entity_id가 숫자(${id.v})라 그려지지 않는다. 칸 이름을 큰따옴표로 감싼 "<id>"로 넘겨 글자로 받는다 [EXP-30]` });
+      out.push({ node: n, level: 'warn', msg: t('#entity_id is a number ({v}), so nothing is drawn. Pass it in a slot name wrapped in double quotes ("<id>") so it arrives as text [EXP-30]', { v: id.v }) });
     }
   }
   return out;
@@ -438,11 +439,11 @@ export function findLayoutIssues(nodes) {
   for (const n of nodes) {
     for (const k of ['size', 'offset', 'min_size', 'max_size']) {
       const v = n.props[k];
-      if (v !== undefined && v !== null && !Array.isArray(v) && !isAnimRef(v)) out.push({ node: n, level: 'warn', msg: `${k}가 배열이 아니다(${JSON.stringify(v)}). 엔진은 expected an array를 남기고 두 축 모두 default로 읽는다` });
+      if (v !== undefined && v !== null && !Array.isArray(v) && !isAnimRef(v)) out.push({ node: n, level: 'warn', msg: t('{k} is not an array ({v}). The engine logs "expected an array" and reads both axes as default', { k, v: JSON.stringify(v) }) });
     }
     for (const k of ['anchor_from', 'anchor_to']) {
       const v = n.props[k];
-      if (v !== undefined && !ANCHORS.includes(v)) out.push({ node: n, level: 'warn', msg: `${k} '${v}'는 엔진의 앵커 이름 9개에 없어 center로 읽힌다` });
+      if (v !== undefined && !ANCHORS.includes(v)) out.push({ node: n, level: 'warn', msg: t("{k} '{v}' is not one of the engine's 9 anchor names, so it is read as center", { k, v }) });
     }
   }
   const shown = nodes.filter((n) => n.effVisible && n.rect && n.rect.w > 0 && n.rect.h > 0);
@@ -456,19 +457,19 @@ export function findLayoutIssues(nodes) {
     }
     if (!scroll) continue;
     const bg = images.find((i) => i.layerAbs === n.layerAbs && (i === cell || isUnder(i, cell)) && overlaps(i.rect, n.rect));
-    if (bg) out.push({ node: n, level: 'warn', msg: `스크롤 영역 안 칸의 라벨이 이미지 ${bg.name}와 같은 레이어(${n.layerAbs})라 게임에서는 무언가를 건드리기 전까지 글자가 비었다. 라벨 layer를 이미지보다 높인다 [LAY-55]` });
+    if (bg) out.push({ node: n, level: 'warn', msg: t('This label in a scroll view cell is on the same layer ({layer}) as image {image}, so in game its text stayed empty until something was touched. Give the label a higher layer than the image [LAY-55]', { image: bg.name, layer: n.layerAbs }) });
   }
   const buttons = shown.filter((n) => n.props.type === 'button' || n.props.type === 'toggle');
   for (const v of shown) {
     if (v.props.type !== 'scroll_view') continue;
     const r = v.rect;
     const taken = buttons.filter((b) => !isUnder(b, v) && !isUnder(v, b) && r.x <= b.rect.x + b.rect.w / 2 && b.rect.x + b.rect.w / 2 <= r.x + r.w && r.y <= b.rect.y + b.rect.h / 2 && b.rect.y + b.rect.h / 2 <= r.y + r.h);
-    if (taken.length) out.push({ node: v, level: 'warn', msg: `이 스크롤 영역이 바깥 버튼 ${taken.length}개(${taken.slice(0, 3).map((b) => b.name).join(', ')}) 위를 덮는다. 휴대폰에서는 내용이 비어 있어도 그 영역의 터치를 가져가 버튼이 눌리지 않았다 [LAY-57]` });
+    if (taken.length) out.push({ node: v, level: 'warn', msg: t('This scroll view covers {count} outside buttons ({names}). On phones it took the touches in its area even when empty, so the buttons could not be pressed [LAY-57]', { count: taken.length, names: taken.slice(0, 3).map((b) => b.name).join(', ') }) });
   }
   for (const g of shown) {
     if (g.props.type !== 'grid') continue;
     const cells = g.children.filter((c) => c.fromFactory).length;
-    if (g.rect.h > 30000 || cells >= 3000) out.push({ node: g, level: 'warn', msg: `grid 높이가 ${Math.round(g.rect.h)}px, 칸이 ${cells}개다. 게임에서는 약 30000px(2열 2000칸)까지 맞았고 45000px(3000칸)부터 칸들이 맨 위 약 200px 안에 겹쳐 그려졌다. 원인이 칸 수인지 높이인지는 모른다 [COL-49]` });
+    if (g.rect.h > 30000 || cells >= 3000) out.push({ node: g, level: 'warn', msg: t('The grid is {h}px tall with {cells} cells. In game it was right up to about 30000px (2 columns, 2000 cells) and from 45000px (3000 cells) the cells were drawn overlapping in the top 200px. Whether the cause is the cell count or the height is unknown [COL-49]', { h: Math.round(g.rect.h), cells }) });
   }
   return out;
 }

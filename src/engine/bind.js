@@ -6,6 +6,7 @@ import { instantiate, Scope, scopeVar, pathOf } from './resolve.js';
 import { splitKey, qualify } from './catalog.js';
 import { localize } from './lang.js';
 import { AnimRuntime } from './anim.js';
+import { t } from '../i18n.js';
 
 const ANIM_EFF = ['alpha', 'clip_ratio', 'color', 'uv', 'uv_size'];
 
@@ -94,8 +95,8 @@ export class Session {
   }
 
   reportHazards(node, src, r) {
-    if (r.hazards?.has('EXP-49')) this.diagOnce(node, 'error', `문자열을 숫자로 나눈다: ${src}. Windows 1.26.65 클라이언트가 이 식에서 멈췄다(모바일 1.26.63은 멈추지 않음). 나누기 전에 (#v - 0)으로 숫자로 바꾼다 [EXP-49]`);
-    if (r.hazards?.has('EXP-16')) this.diagOnce(node, 'warn', `문자열에 * 숫자를 했다: ${src}. \`* 1\`은 문자열을 숫자로 바꾸지 않는다. (#v - 0)을 쓴다 [EXP-16]`);
+    if (r.hazards?.has('EXP-49')) this.diagOnce(node, 'error', t('A string divided by a number: {src}. The Windows 1.26.65 client froze on this expression (mobile 1.26.63 did not). Convert with (#v - 0) before dividing [EXP-49]', { src }));
+    if (r.hazards?.has('EXP-16')) this.diagOnce(node, 'warn', t('A string times a number: {src}. `* 1` does not turn a string into a number. Use (#v - 0) [EXP-16]', { src }));
   }
 
   run(host) {
@@ -125,18 +126,18 @@ export class Session {
   checkFormButtonLength(node) {
     const bs = Array.isArray(node.props.bindings) ? node.props.bindings : [];
     if (bs.some((b) => isObj(b) && [b.binding_name, b.source_property_name].some((s) => typeof s === 'string' && /#form_button_length(?![\w.:])/.test(s)))) {
-      this.diagOnce(node, 'warn', '#form_button_length는 게임에서 지금까지 보인 가장 큰 폼의 버튼 수로 남는다. 칸 수는 본문 같은 다른 채널로 보낸다 [COL-34]');
+      this.diagOnce(node, 'warn', t('In game #form_button_length stays at the button count of the largest form shown so far. Send the cell count through another channel such as the body [COL-34]'));
     }
   }
 
   checkCollectionProps(node) {
     const p = node.props;
     if (typeof p.collection_name === 'string' && p.collection_name !== '' && !COLLECTION_TYPES.includes(p.type)) {
-      this.diag(node, 'error', `Unknown property [collection_name]: ${p.type}에는 컬렉션이 없다. stack_panel, grid, collection_panel에 쓴다 [COL-01]`);
+      this.diag(node, 'error', t('Unknown property [collection_name]: {type} has no collection. Use it on stack_panel, grid or collection_panel [COL-01]', { type: p.type }));
     }
     if (p.collection_index === undefined || node.fromFactory) return;
-    if (!this.isCollectionParent(node.parent)) this.diag(node, 'warn', 'Unknown property [collection_index]: collection_name을 가진 stack_panel의 바로 아래 자식에서만 읽힌다 [COL-38, COL-50]');
-    else if (this.opts.measured && NO_INDEX_TYPES.includes(p.type)) this.diag(node, p.type === 'image' ? 'error' : 'warn', `${p.type}의 collection_index는 ${p.type === 'image' ? '거부된다' : '무시된다'}. 패널로 감싸 패널 참조에 준다 [COL-02]`);
+    if (!this.isCollectionParent(node.parent)) this.diag(node, 'warn', t('Unknown property [collection_index]: it is read only on direct children of a stack_panel with collection_name [COL-38, COL-50]'));
+    else if (this.opts.measured && NO_INDEX_TYPES.includes(p.type)) this.diag(node, p.type === 'image' ? 'error' : 'warn', t(p.type === 'image' ? 'collection_index on {type} is rejected. Wrap it in a panel and give it to the panel reference [COL-02]' : 'collection_index on {type} is ignored. Wrap it in a panel and give it to the panel reference [COL-02]', { type: p.type }));
   }
 
   prepareBags() {
@@ -198,7 +199,7 @@ export class Session {
         if (this.isCollectionParent(n.parent) && n.parent.props.collection_name === cname) return n.factoryIndex ?? (Number.isInteger(n.props.collection_index) ? n.props.collection_index : -1);
       }
     }
-    this.diagOnce(node, 'info', '라디오 토글의 인덱스를 toggle_group_forced_index나 toggle_grid_collection_name 컬렉션 항목에서 얻지 못해 같은 toggle_name 토글의 트리 순서를 썼다. 엔진 코드에서 이 경우의 인덱스는 모른다');
+    this.diagOnce(node, 'info', t('The radio toggle got no index from toggle_group_forced_index or a toggle_grid_collection_name item, so the tree order of toggles with the same toggle_name is used. The engine index in this case is unknown'));
     return members.indexOf(node);
   }
 
@@ -281,10 +282,10 @@ export class Session {
   blockedLength(node) {
     const bs = this.bindingsTo(node, '#collection_length');
     if (bs.some((b) => FORM_BUTTON_EXPR.test((b.binding_type === 'view' ? b.source_property_name : b.binding_name) ?? ''))) {
-      return '#form_button_contents·#form_button_length를 식으로 계산한 길이로는 게임에서 버튼을 만들지 않았다. binding_name_override로 그대로 옮긴다 [COL-36]';
+      return t('In game a length computed by an expression from #form_button_contents or #form_button_length made no buttons. Pass it unchanged with binding_name_override [COL-36]');
     }
     if (bs.length && !bs.some((b) => b.binding_condition === 'always') && this.insidePackFactoryCell(node)) {
-      return '팩토리가 만든 칸 안의 팩토리는 길이 바인딩이 always가 아니면 게임에서 처음에 아무것도 만들지 않았다. 길이와 그 원본 바인딩에 binding_condition "always"를 주거나 grid를 쓴다 [COL-48]';
+      return t('In game a factory inside a factory-made cell made nothing at first unless its length binding was always. Give the length and its source binding binding_condition "always", or use a grid [COL-48]');
     }
     return null;
   }
@@ -363,7 +364,7 @@ export class Session {
     else count = 0;
     if (dims && p.grid_rescaling_type == null) count = Math.min(count, dims[0] * dims[1]);
     if (this.opts.measured && this.bindingsTo(node, '#maximum_grid_items').some((b) => FORM_BUTTON_EXPR.test((b.binding_type === 'view' ? b.source_property_name : b.binding_name) ?? ''))) {
-      this.diagOnce(node, 'warn', '#form_button_contents·#form_button_length를 식으로 계산한 격자 크기는 게임에서 맞게 정해지지 않았다. binding_name_override로 그대로 옮긴다 [COL-36]');
+      this.diagOnce(node, 'warn', t('In game a grid size computed by an expression from #form_button_contents or #form_button_length was not set right. Pass it unchanged with binding_name_override [COL-36]'));
     }
     const key = `grid:${count}:${JSON.stringify(dims)}`;
     if (node.factoryKey === key) return false;
@@ -394,7 +395,7 @@ export class Session {
       if (this.opts.measured) {
         for (const b of bs) {
           if (isObj(b) && b.binding_type === 'view' && typeof b.source_property_name === 'string' && !b.source_property_name.includes('#')) {
-            this.diag(node, 'error', `Must define a source property name in the binding! — '#'가 없는 식이라 이 컨트롤의 bindings 전체가 버려졌다 [BND-05]`);
+            this.diag(node, 'error', t("Must define a source property name in the binding! The expression has no '#', so every binding of this control was dropped [BND-05]"));
             node.droppedBindings = true;
           }
         }
@@ -403,11 +404,11 @@ export class Session {
       bs.forEach((b, i) => {
         if (!isObj(b) || elementIgnored(b, node)) return;
         let type = b.binding_type ?? 'global';
-        if (!TYPES.includes(type)) { this.diag(node, 'warn', `알 수 없는 binding_type '${type}' → global [BND-22]`); type = 'global'; }
+        if (!TYPES.includes(type)) { this.diag(node, 'warn', t("Unknown binding_type '{type}', read as global [BND-22]", { type })); type = 'global'; }
         if (type === 'none') return;
         let cond = b.binding_condition ?? 'none';
         if (typeof cond !== 'string') { this.diag(node, 'error', 'JSON UI parse failure - expected a string.'); cond = 'none'; }
-        if (!CONDITIONS.includes(cond)) { this.diag(node, 'warn', `알 수 없는 binding_condition '${cond}' → none [BND-35]`); cond = 'none'; }
+        if (!CONDITIONS.includes(cond)) { this.diag(node, 'warn', t("Unknown binding_condition '{cond}', read as none [BND-35]", { cond })); cond = 'none'; }
         if (!this.conditionAllows(node, i, cond)) return;
         if (type === 'view') { views.push({ node, b, i }); return; }
         this.bindDirect(node, b, type);
@@ -420,7 +421,7 @@ export class Session {
       for (const v of views) if (this.bindView(v.node, v.b)) changed = true;
       if (!changed) break;
     }
-    if (rounds === 32) this.diag(this.tree, 'warn', 'view 바인딩이 수렴하지 않는다(바인딩 루프)');
+    if (rounds === 32) this.diag(this.tree, 'warn', t('View bindings do not settle (binding loop)'));
   }
 
   conditionAllows(node, i, cond) {
@@ -481,7 +482,7 @@ export class Session {
       if (!cname) { this.diag(node, 'error', 'Must define a collection name for the binding!'); return; }
       const read = (k) => { const v = this.collectionValue(node, cname, k); return v === undefined ? undefined : fromJson(v); };
       if (src.expr) {
-        if (this.opts.measured) this.diagOnce(node, 'warn', `컬렉션 바인딩의 binding_name에 식을 썼다: ${name}. 서버 폼 버튼 칸에서 ('%.12s' * #form_button_text)를 이렇게 쓰자 Windows 1.26.65 클라이언트가 멈췄다(어느 식 때문인지는 분리하지 않음). 컬렉션 바인딩으로 값을 받고 뒤의 view 바인딩에서 계산한다 [BND-37]`);
+        if (this.opts.measured) this.diagOnce(node, 'warn', t("An expression in the binding_name of a collection binding: {name}. In a server form button cell, ('%.12s' * #form_button_text) written like this froze the Windows 1.26.65 client (which expression was not isolated). Take the value with the collection binding and compute it in a later view binding [BND-37]", { name }));
         this.writeExpression(node, src, override, read);
         return;
       }
@@ -526,7 +527,7 @@ export class Session {
   writeExpression(node, src, override, read) {
     const r = evaluate(src.expr, { prop: read, variable: this.varFn(node), opts: this.opts });
     this.reportHazards(node, src.expr, r);
-    if (r.error) { this.diag(node, 'error', `식 바인딩 실패: ${src.expr}`); return; }
+    if (r.error) { this.diag(node, 'error', t('Expression binding failed: {expr}', { expr: src.expr })); return; }
     if (override) { this.write(node, override, r.value); return; }
     for (const n of src.names) {
       const v = read(n);
@@ -549,7 +550,7 @@ export class Session {
     if (!this.opts.measured) return v;
     return (n) => {
       if (n !== '$container_title') return v(n);
-      if (!node.reportedTitleVar) { node.reportedTitleVar = true; this.diag(node, 'warn', '$container_title은 바인딩 식 안에서 쓰이지 않는다 [HOST-19]. ignored, visible 속성 식이나 복사 변수로 비교한다 [HOST-48]'); }
+      if (!node.reportedTitleVar) { node.reportedTitleVar = true; this.diag(node, 'warn', t('$container_title does not work inside binding expressions [HOST-19]. Compare it in ignored or visible property expressions or through a copied variable [HOST-48]')); }
       return undefined;
     };
   }
@@ -581,7 +582,7 @@ export class Session {
     if (!src.includes('#')) { this.diag(node, 'error', 'Must define a source property name in the binding!'); return false; }
     const source = this.findSource(node, b);
     if (!source) {
-      if (!node.missingSourceReported) { this.diag(node, 'warn', `source_control_name '${b.source_control_name}'을 찾지 못했다`); node.missingSourceReported = true; }
+      if (!node.missingSourceReported) { this.diag(node, 'warn', t("source_control_name '{name}' not found", { name: b.source_control_name })); node.missingSourceReported = true; }
       return false;
     }
     const named = !!b.source_control_name;
@@ -616,7 +617,7 @@ export class Session {
         if (v !== undefined && v.k !== 'null') {
           if (kind === 'bool') {
             if (v.k === 'bool') return v.v;
-            (node.bindDiags ||= []).push({ level: 'warn', msg: `${bindName}에 불리언이 아닌 값(${JSON.stringify(toJson(v))})이 들어와 무시된다 [BND-27]`, where: pathOf(node) });
+            (node.bindDiags ||= []).push({ level: 'warn', msg: t('{name} got a value that is not a boolean ({value}), so it is ignored [BND-27]', { name: bindName, value: JSON.stringify(toJson(v)) }), where: pathOf(node) });
           } else if (kind === 'num') {
             if (v.k === 'int' || v.k === 'num' || v.k === 'bool') return v.k === 'bool' ? +v.v : v.v;
           } else if (kind === 'text') {
@@ -650,7 +651,7 @@ export class Session {
       for (const k of ['#size_binding_x', '#size_binding_y', '#size_binding_x_absolute', '#size_binding_y_absolute', '#anchored_offset_value_x', '#anchored_offset_value_y']) {
         const v = onlyBound(k) ? bag.get(k) : undefined;
         if (v && (v.k === 'int' || v.k === 'num')) eff[k] = v.v;
-        else if (v && v.k !== 'null') (node.bindDiags ||= []).push({ level: 'error', msg: `${k}에 숫자가 아닌 값. 값은 숫자여야 하고 아니면 크래시가 난다는 커뮤니티 보고가 있다(실측 아님)`, where: pathOf(node) });
+        else if (v && v.k !== 'null') (node.bindDiags ||= []).push({ level: 'error', msg: t('{k} got a value that is not a number. It must be a number; a community report says anything else crashes (not measured)', { k }), where: pathOf(node) });
       }
       if (!this.opts.measured) {
         const off = bag.get('#offset');
@@ -688,11 +689,11 @@ export class Session {
     for (const k of keys) {
       const name = p[k];
       if (typeof name !== 'string' || !name) {
-        if (k === want && p.type === 'toggle') (node.bindDiags ||= []).push({ level: 'error', msg: `토글 상태 '${k}'가 정의되지 않아 이 상태에서 컨트롤이 사라진다 [INP-10]`, where: pathOf(node) });
+        if (k === want && p.type === 'toggle') (node.bindDiags ||= []).push({ level: 'error', msg: t("Toggle state '{k}' is not defined, so the control disappears in this state [INP-10]", { k }), where: pathOf(node) });
         continue;
       }
       const target = find(name);
-      if (!target) { if (k === want) (node.bindDiags ||= []).push({ level: 'warn', msg: `${k} '${name}' 자식이 없다`, where: pathOf(node) }); continue; }
+      if (!target) { if (k === want) (node.bindDiags ||= []).push({ level: 'warn', msg: t("{k} '{name}' has no matching child", { k, name }), where: pathOf(node) }); continue; }
       if (k === want) overrides.set(target.uid, true);
       else if (!overrides.has(target.uid)) overrides.set(target.uid, false);
     }
@@ -756,7 +757,7 @@ export class Session {
 
   hoverNotes(node, entered) {
     return this.mappingsOf(node).toOnly.map((m) => {
-      const r = { node, kind: 'hover', to: m.to_button_id, msg: `hover ${entered ? '들어옴' : '나감'} 알림 ${m.to_button_id}. from_button_id가 없는 매핑은 클릭이 아니다` };
+      const r = { node, kind: 'hover', to: m.to_button_id, msg: t(entered ? 'Hover enter notice {to}. A mapping without from_button_id is not a click' : 'Hover leave notice {to}. A mapping without from_button_id is not a click', { to: m.to_button_id }) };
       if (entered) this.dispatchAnim(r);
       return r;
     });
@@ -807,17 +808,17 @@ export class Session {
   }
 
   deliver(node, m, down, edge) {
-    const t = node.props.type, locked = node.eff?.enabled === false;
-    const isButton = t === 'button' || t === 'edit_box';
+    const type = node.props.type, locked = node.eff?.enabled === false;
+    const isButton = type === 'button' || type === 'edit_box';
     if (isButton && !locked) {
       if (down) this.pressUids.add(node.uid);
       else this.pressUids.delete(node.uid);
     }
     const consumed = (isButton ? locked || flag(node.props.consume_event, true) : true) && flag(m.consume_event, true);
-    const r = { node, to: m.to_button_id, down, edge, consumed, kind: 'event', msg: `버튼 이벤트 ${m.to_button_id}` };
+    const r = { node, to: m.to_button_id, down, edge, consumed, kind: 'event', msg: t('Button event {to}', { to: m.to_button_id }) };
     if (!edge) return r;
-    if (t === 'toggle') Object.assign(r, this.toggleClick(node));
-    else if (t === 'button') Object.assign(r, this.pressAnswer(node, [m.to_button_id]));
+    if (type === 'toggle') Object.assign(r, this.toggleClick(node));
+    else if (type === 'button') Object.assign(r, this.pressAnswer(node, [m.to_button_id]));
     this.dispatchAnim(r);
     return r;
   }
@@ -826,36 +827,36 @@ export class Session {
     const reacted = this.anim.dispatch(r.to);
     if (!reacted) return;
     r.anim = { reacted, layout: this.syncAnimations() };
-    r.msg += ` (애니메이션 ${reacted}개가 버튼 이벤트에 반응)`;
+    r.msg += t(' ({count} animations reacted to the button event)', { count: reacted });
   }
 
   toggleClick(btn) {
     const p = btn.props;
-    if (!btn.effVisible || btn.eff?.enabled === false) return { kind: 'toggle', msg: '잠긴 토글은 바뀌지 않는다' };
+    if (!btn.effVisible || btn.eff?.enabled === false) return { kind: 'toggle', msg: t('A locked toggle does not change') };
     const noOnOff = !p.toggle_on_button || !p.toggle_off_button;
-    const note = noOnOff ? '. toggle_on_button/toggle_off_button이 없어도 button_mappings만 있으면 바뀐다(Windows 1.26.65 실측, 클라이언트 코드와 같다). 두 키는 enable_directional_toggling에서만 쓰인다 [INP-11]' : '';
+    const note = noOnOff ? t('. It changes with button_mappings alone, without toggle_on_button/toggle_off_button (measured on Windows 1.26.65, same as the client code). Those two keys are used only by enable_directional_toggling [INP-11]') : '';
     const group = this.radioGroup(btn);
     if (group) {
       for (const m of group) m.bag?.set('#toggle_state', fromJson(m === btn));
-      return { kind: 'toggle', msg: `라디오 ${p.toggle_name}: ${btn.name}만 켜진다 (토글 ${group.length}개) [INP-35]${note}` };
+      return { kind: 'toggle', msg: t('Radio {group}: only {name} turns on ({count} toggles) [INP-35]', { group: p.toggle_name, name: btn.name, count: group.length }) + note };
     }
     const cur = btn.bag.get('#toggle_state');
     btn.bag.set('#toggle_state', fromJson(!(cur && truthy(cur))));
-    return { kind: 'toggle', msg: `토글 ${btn.name} → ${!(cur && truthy(cur))}${note}` };
+    return { kind: 'toggle', msg: t('Toggle {name}: {state}', { name: btn.name, state: !(cur && truthy(cur)) }) + note };
   }
 
   // A whole click (press and release) on the nearest button or toggle, as if the pointer were over it.
   press(node, now = Date.now()) {
     let btn = node;
     while (btn && btn.props.type !== 'button' && btn.props.type !== 'toggle') btn = btn.parent;
-    if (!btn) return { kind: 'none', msg: '버튼이 아닌 곳' };
+    if (!btn) return { kind: 'none', msg: t('Not a button') };
     const hover = this.hoverUids;
     this.hoverUids = new Set([...hover, btn.uid]);
     const rs = [true, false].map((down) => this.inputEvent(btn, 'button.menu_select', down, { now }));
     this.hoverUids = hover;
     const r = rs.find((x) => x?.edge);
     if (r) return r;
-    if (btn.props.type === 'toggle') return { kind: 'toggle', msg: 'button.menu_select를 받는 button_mappings가 없어 눌리지 않는다 [INP-11]' };
+    if (btn.props.type === 'toggle') return { kind: 'toggle', msg: t('No button_mappings take button.menu_select, so it is not pressed [INP-11]') };
     return this.pressAnswer(btn, []);
   }
 
@@ -863,18 +864,18 @@ export class Session {
     const known = to.find((t) => /^button\.(form_button_click|submit_custom_form|menu_exit|menu_cancel|close|drop_one|drop_all)$/.test(t));
     if (to.includes('button.form_button_click')) {
       if (!btn.details || !btn.details.has('form_buttons')) {
-        return { kind: 'form', msg: `폼이 닫히고 스크립트에는 canceled로 온다 — 버튼 자신에 form_buttons collection_details 바인딩이 없다 [COL-04]` };
+        return { kind: 'form', msg: t('The form closes and the script gets canceled: the button has no form_buttons collection_details binding of its own [COL-04]') };
       }
       const ci = this.collectionItem(btn);
-      return { kind: 'form', msg: `폼이 닫히고 selection = ${ci ? ci.index : 0} 으로 응답한다` };
+      return { kind: 'form', msg: t('The form closes and answers selection = {index}', { index: ci ? ci.index : 0 }) };
     }
-    if (known) return { kind: 'engine', msg: `엔진 버튼 ${known}` };
-    if (to.includes('button.container_auto_place')) return { kind: 'engine', msg: '빠른 이동: 칸의 아이템을 바로 옮긴다' };
+    if (known) return { kind: 'engine', msg: t('Engine button {id}', { id: known }) };
+    if (to.includes('button.container_auto_place')) return { kind: 'engine', msg: t('Quick move: the slot item moves at once') };
     if (to.includes('button.container_take_all_place_all')) {
-      if (btn.scope?.lookup('$touch') === true) return { kind: 'engine', msg: '터치의 칸 누름: 첫 탭은 칸을 고르기만 하고, 다음에 탭한 다른 칸과 아이템을 맞바꾼다. 커서로 가는 아이템은 없다 (entity-inventory-ui 2.5, 실측)' };
-      return { kind: 'engine', msg: '엔진 버튼 button.container_take_all_place_all' };
+      if (btn.scope?.lookup('$touch') === true) return { kind: 'engine', msg: t('Touch slot press: the first tap only selects the slot, and the item swaps with the next slot tapped. Nothing goes to the cursor (entity-inventory-ui 2.5, measured)') };
+      return { kind: 'engine', msg: t('Engine button {id}', { id: 'button.container_take_all_place_all' }) };
     }
-    if (to.length) return { kind: 'custom', msg: `엔진이 모르는 버튼 ID ${to.join(', ')} — 폼에 답하지 않고 화면 안 애니메이션만 [INP-20, INP-31]` };
-    return { kind: 'none', msg: '눌림 매핑이 없다' };
+    if (to.length) return { kind: 'custom', msg: t('Button IDs unknown to the engine: {ids}. The form gets no answer; only animations on the screen react [INP-20, INP-31]', { ids: to.join(', ') }) };
+    return { kind: 'none', msg: t('No pressed mapping') };
   }
 }

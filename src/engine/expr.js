@@ -3,6 +3,8 @@
 // (CN-26..CN-30: the Cinnabar reconstruction of the native evaluator). Values are tagged:
 //   { k: 'int', v } | { k: 'num', v } | { k: 'str', v } | { k: 'bool', v } | { k: 'null' } | { k: 'json', v }
 
+import { t } from '../i18n.js';
+
 export const NULL = Object.freeze({ k: 'null' });
 export const int = (v) => ({ k: 'int', v: v | 0 });
 export const num = (v) => ({ k: 'num', v: Math.fround(v) });
@@ -313,13 +315,13 @@ class BrokenGroup extends Error {}
 export function lintExpression(src) {
   const hints = [];
   const outside = src.replace(/'[^']*'|"[^"]*"/g, "''");
-  if (/>=|<=/.test(outside)) hints.push('`>=`/`<=` 없음: `((a > b) or (a = b))` [EXP-03]');
-  if (/!=|==|&&|\|\|/.test(outside)) hints.push('`!=`, `==`, `&&`, `||` 없음: `not`, `and`, `or` [EXP-01]');
-  if (/\s%\s|\w%\s|\s%\w/.test(outside)) hints.push('`%` 연산자 없음(개발 빌드 assert) [EXP-02]');
-  if (/[<>]\s*[#$\w.']+\s*[<>]/.test(outside)) hints.push('사슬 비교는 범위 검사가 아님 [EXP-28]');
-  if (/\*\s*1(?![\d.])/.test(outside) || /(?<![\d.])1\s*\*/.test(outside)) hints.push('`* 1`은 숫자 변환이 아님. `(#v - 0)` [EXP-16]');
-  if (/(?<![\w.])\d+\.\d+/.test(outside)) hints.push('`0.3`처럼 앞자리가 있는 소수는 정수. `.3`을 쓴다 [EXP-27]');
-  if (/'%\.'\s*\+/.test(src)) hints.push('`#` 바인딩으로 만드는 동적 N 서식은 1.21.130부터 막혔다는 보고(D-04). 변수 블록 식의 `(\'%.\' + $n + \'s\')`는 1.26.63에서 동작했다');
+  if (/>=|<=/.test(outside)) hints.push(t('No `>=`/`<=`: use `((a > b) or (a = b))` [EXP-03]'));
+  if (/!=|==|&&|\|\|/.test(outside)) hints.push(t('No `!=`, `==`, `&&`, `||`: use `not`, `and`, `or` [EXP-01]'));
+  if (/\s%\s|\w%\s|\s%\w/.test(outside)) hints.push(t('No `%` operator (assert in development builds) [EXP-02]'));
+  if (/[<>]\s*[#$\w.']+\s*[<>]/.test(outside)) hints.push(t('A chained comparison is not a range check [EXP-28]'));
+  if (/\*\s*1(?![\d.])/.test(outside) || /(?<![\d.])1\s*\*/.test(outside)) hints.push(t('`* 1` does not convert to a number. Use `(#v - 0)` [EXP-16]'));
+  if (/(?<![\w.])\d+\.\d+/.test(outside)) hints.push(t('A decimal with a leading digit like `0.3` is an integer. Write `.3` [EXP-27]'));
+  if (/'%\.'\s*\+/.test(src)) hints.push(t("A dynamic N format built from a `#` binding was reported blocked since 1.21.130 (D-04). `('%.' + $n + 's')` in a variables block expression worked on 1.26.63"));
   return hints;
 }
 

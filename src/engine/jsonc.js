@@ -2,6 +2,8 @@
 // comments and leading zeros are accepted, trailing commas and unquoted keys are errors.
 // On an error the members read before it are kept and the rest of the file is dropped.
 
+import { t } from '../i18n.js';
+
 export function parseJsonc(text) {
   let i = 0;
   if (text.charCodeAt(0) === 0xfeff) i = 1;
@@ -9,7 +11,7 @@ export function parseJsonc(text) {
     const before = text.slice(0, i);
     const line = before.split('\n').length;
     const col = i - before.lastIndexOf('\n');
-    const e = new Error(`${msg} (줄 ${line}, 칸 ${col})`);
+    const e = new Error(t('{msg} (line {line}, column {col})', { msg: t(msg), line, col }));
     e.line = line;
     throw e;
   };
@@ -20,7 +22,7 @@ export function parseJsonc(text) {
       if (c === '/' && text[i + 1] === '/') { while (i < text.length && text[i] !== '\n') i++; continue; }
       if (c === '/' && text[i + 1] === '*') {
         const j = text.indexOf('*/', i + 2);
-        if (j < 0) err('닫히지 않은 주석');
+        if (j < 0) err('Unclosed comment');
         i = j + 2;
         continue;
       }
@@ -31,7 +33,7 @@ export function parseJsonc(text) {
     i++; // opening quote
     let out = '';
     for (;;) {
-      if (i >= text.length) err('닫히지 않은 문자열');
+      if (i >= text.length) err('Unclosed string');
       const c = text[i++];
       if (c === '"') return out;
       if (c === '\\') {
@@ -61,7 +63,7 @@ export function parseJsonc(text) {
     for (const [w, v] of [['true', true], ['false', false], ['null', null]]) {
       if (text.startsWith(w, i)) { i += w.length; return v; }
     }
-    err('알 수 없는 값');
+    err('Unknown value');
   }
   function object(partial) {
     i++;
@@ -70,17 +72,17 @@ export function parseJsonc(text) {
     if (text[i] === '}') { i++; return obj; }
     for (;;) {
       ws();
-      if (text[i] === '}') err('뒤따르는 쉼표');
-      if (text[i] !== '"') err('따옴표 없는 키');
+      if (text[i] === '}') err('Trailing comma');
+      if (text[i] !== '"') err('Unquoted key');
       const k = string();
       ws();
-      if (text[i] !== ':') err("':' 없음");
+      if (text[i] !== ':') err("Missing ':'");
       i++;
       obj[k] = value();
       ws();
       if (text[i] === ',') { i++; continue; }
       if (text[i] === '}') { i++; return obj; }
-      err("',' 또는 '}' 없음");
+      err("Missing ',' or '}'");
     }
   }
   function array() {
@@ -90,18 +92,18 @@ export function parseJsonc(text) {
     if (text[i] === ']') { i++; return arr; }
     for (;;) {
       ws();
-      if (text[i] === ']') err('뒤따르는 쉼표');
+      if (text[i] === ']') err('Trailing comma');
       arr.push(value());
       ws();
       if (text[i] === ',') { i++; continue; }
       if (text[i] === ']') { i++; return arr; }
-      err("',' 또는 ']' 없음");
+      err("Missing ',' or ']'");
     }
   }
   const root = {};
   try {
     ws();
-    if (text[i] !== '{') err('최상위가 객체가 아님');
+    if (text[i] !== '{') err('The top level is not an object');
     object(root);
     return { value: root, error: null };
   } catch (e) {

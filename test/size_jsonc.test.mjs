@@ -25,12 +25,12 @@ test('jsonc accepts comments and leading zeros', () => {
 });
 test('trailing comma is an error and keeps earlier members', () => {
   const r = parseJsonc('{ "a": 1, "b": { "x": 2, }, "c": 3 }');
-  assert.match(r.error, /뒤따르는 쉼표/);
+  assert.match(r.error, /Trailing comma/);
   assert.equal(r.value.a, 1);
   assert.equal(r.value.c, undefined);
 });
 test('unquoted key is an error', () => {
-  assert.match(parseJsonc('{ a: 1 }').error, /따옴표 없는 키/);
+  assert.match(parseJsonc('{ a: 1 }').error, /Unquoted key/);
 });
 
 test('font layout: words wrap at spaces, a trailing newline adds no line', async () => {
