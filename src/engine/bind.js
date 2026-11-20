@@ -6,6 +6,7 @@ import { instantiate, Scope, scopeVar, pathOf } from './resolve.js';
 import { splitKey, qualify } from './catalog.js';
 import { localize } from './lang.js';
 import { AnimRuntime } from './anim.js';
+import { findByName, scrollToEdge } from './layout.js';
 import { t } from '../i18n.js';
 
 const ANIM_EFF = ['alpha', 'clip_ratio', 'color', 'uv', 'uv_size'];
@@ -33,6 +34,57 @@ const MAPPING_TYPES = ['global', 'double_pressed', 'pressed', 'focused'];
 const mappingType = (m) => (MAPPING_TYPES.includes(m.mapping_type) ? m.mapping_type : 'pressed');
 const flag = (v, dflt) => (v === true || v === 'true' ? true : v === false || v === 'false' ? false : dflt);
 const inside = (r, x, y) => !!r && r.w > 0 && r.h > 0 && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+const FOCUS_TYPES = new Set(['button', 'dropdown', 'edit_box', 'grid', 'grid_page_indicator', 'input_panel', 'scroll_track', 'selection_wheel', 'slider', 'toggle', 'tooltip_trigger']);
+const DIRS = { 1: 'up', 2: 'down', 3: 'left', 4: 'right' };
+const DIR_VECTORS = { 1: [0, -1], 2: [0, 1], 3: [-1, 0], 4: [1, 0] };
+const isModal = (n) => INPUT_TYPES.has(n.props.type) && flag(n.props.modal, false);
+const isContainer = (n) => flag(n.props.focus_container, false);
+const center = (r) => [r.x + r.w / 2, r.y + r.h / 2];
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function within(node, ancestor) {
+  for (let a = node; a; a = a.parent) if (a === ancestor) return true;
+  return false;
+}
+
+function nearestContainer(node) {
+  for (let a = node; a; a = a.parent) if (isContainer(a)) return a;
+  return null;
+}
+
+function cornerInClip(n) {
+  const c = n.clip, r = n.rect;
+  if (!c || !INPUT_TYPES.has(n.props.type)) return true;
+  return [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]
+    .some(([x, y]) => x >= c.x && y >= c.y && x <= c.x + c.w && y <= c.y + c.h);
+}
+
+function facingPoint(r, [px, py], dx, dy) {
+  if (dy) return [clamp(px, r.x, r.x + r.w), dy < 0 ? r.y + r.h : r.y];
+  return [dx < 0 ? r.x + r.w : r.x, clamp(py, r.y, r.y + r.h)];
+}
+
+export function focusSearch(from, dir, candidates, { wrap = false, clip = false, screen = { w: 0, h: 0 } } = {}) {
+  const r = from.rect, [dx, dy] = DIR_VECTORS[dir], [cx, cy] = center(r);
+  const half = Math.hypot(r.w / 2, r.h / 2);
+  const limit = half > 0 ? Math.min(0.02, (dy ? r.h / 2 : r.w / 2) / half) : 0.02;
+  const pass = (p) => {
+    let best = null, bestDist = 1e6;
+    for (const c of candidates) {
+      if (c === from || (clip && !cornerInClip(c))) continue;
+      const q = facingPoint(c.rect, p, dx, dy);
+      const vx = q[0] - p[0], vy = q[1] - p[1], dist = Math.hypot(vx, vy);
+      const cos = dist <= 1.19e-7 ? 1 : (vx * dx + vy * dy) / dist;
+      if (cos >= limit && dist < bestDist) { best = c; bestDist = dist; }
+    }
+    return best;
+  };
+  const p = [dx ? (dx < 0 ? r.x + 2 : r.x + r.w - 2) : cx, dy ? (dy < 0 ? r.y + 2 : r.y + r.h - 2) : cy];
+  const to = pass(p);
+  if (to || !wrap) return { to, wrapped: false };
+  const edge = dy ? [p[0], dy < 0 ? screen.h : 0] : [dx < 0 ? screen.w : 0, p[1]];
+  return { to: pass(edge), wrapped: true };
+}
 
 // An array element can carry its own `ignored` (FILE-18): a boolean, or a $ expression already folded.
 function elementIgnored(el, node) {
@@ -66,6 +118,9 @@ export class Session {
     this.hoverUids = new Set();
     this.pressUids = new Set();
     this.inputOrder = [];
+    this.focusUid = null;
+    this.focusActive = false;
+    this.lastFocus = new Map();
   }
 
   advanceAnimations(dt) {
@@ -728,11 +783,154 @@ export class Session {
     return out;
   }
 
+  activeModal() {
+    let best = null;
+    walk(this.tree, (n) => { if (isModal(n) && n.effVisible && (!best || (n.layerAbs ?? 0) > (best.layerAbs ?? 0))) best = n; });
+    return best || this.tree;
+  }
+
+  modalFilter() {
+    const modal = this.activeModal();
+    const inline = modal !== this.tree && flag(modal.props.inline_modal, false);
+    return (n) => {
+      if (inline && n.props.type === 'scroll_view') return true;
+      let m = n;
+      while (m && m !== this.tree && !isModal(m)) m = m.parent;
+      return (m || this.tree) === modal;
+    };
+  }
+
+  focusValue(node, key, dflt) {
+    const v = node.bag?.get(`#${key}`);
+    if (v !== undefined && v.k !== 'null') return toJson(v);
+    return this.literalProp(node, key) ?? dflt;
+  }
+
+  focusPrecedence(node) {
+    return Math.trunc(Number(this.focusValue(node, 'default_focus_precedence', 0))) || 0;
+  }
+
+  focusList() {
+    const allowed = this.modalFilter();
+    const out = [];
+    walk(this.tree, (n) => {
+      if (FOCUS_TYPES.has(n.props.type) && n.rect && n.effVisible && n.eff?.enabled !== false && flag(this.focusValue(n, 'focus_enabled', false), false) && allowed(n)) out.push(n);
+    });
+    return out;
+  }
+
+  initialFocus(list = this.focusList()) {
+    const best = Math.max(0, ...list.map((n) => this.focusPrecedence(n)));
+    const width = this.tree.rect?.w ?? 0;
+    const key = (n) => n.rect.y * width + n.rect.x;
+    let pick = null;
+    for (const n of list) if (this.focusPrecedence(n) === best && (!pick || key(n) < key(pick))) pick = n;
+    return pick;
+  }
+
+  setFocus(node) {
+    this.focusUid = node ? node.uid : null;
+    if (node) for (let a = node; a; a = a.parent) if (isContainer(a)) this.lastFocus.set(a.uid, node.uid);
+  }
+
+  focusNode(list = this.focusList()) {
+    const f = list.find((n) => n.uid === this.focusUid);
+    if (f || this.focusUid === null) return f || null;
+    const modal = this.activeModal();
+    const last = isContainer(modal) && flag(modal.props.use_last_focus, false) ? list.find((n) => n.uid === this.lastFocus.get(modal.uid)) : null;
+    const next = last || (this.focusActive ? this.initialFocus(list) : null);
+    this.setFocus(next);
+    return next;
+  }
+
+  focusAt(x, y) {
+    const px = Math.round(x), py = Math.round(y);
+    const hit = this.focusList().find((n) => {
+      const r = n.rect;
+      if (px < r.x - 1 || py < r.y - 1 || px > r.x + r.w + 1 || py > r.y + r.h + 1) return false;
+      for (let a = n.parent; a; a = a.parent) if (flag(a.props.clips_children, false) && a.rect && !inside(a.rect, px, py)) return false;
+      return true;
+    });
+    if (hit) this.setFocus(hit);
+    return hit || null;
+  }
+
+  sweep(from, dir, list) {
+    const key = `focus_change_${DIRS[dir]}`;
+    const change = String(this.focusValue(from, key, '') ?? '');
+    if (change === 'FOCUS_OVERRIDE_STOP') return { to: null, rule: 'FOCUS_OVERRIDE_STOP' };
+    if (change) {
+      const hit = list.find((n) => String(this.focusValue(n, 'focus_identifier', '')) === change);
+      if (hit) return { to: hit, rule: `${key} ${change}` };
+    }
+    for (let a = from.parent; a; a = a.parent) {
+      if (a.props.type !== 'scroll_view') continue;
+      const content = findByName(a, a.props.scroll_content);
+      if (!content) continue;
+      const { to } = focusSearch(from, dir, list.filter((n) => n !== content && within(n, content)));
+      if (to) return { to, rule: t('scroll view {name}', { name: a.name }) };
+    }
+    const screen = { w: this.tree.rect?.w ?? 0, h: this.tree.rect?.h ?? 0 };
+    const { to, wrapped } = focusSearch(from, dir, list, { wrap: flag(this.focusValue(from, 'focus_wrap_enabled', true), true), clip: true, screen });
+    if (!to) return { to: null, rule: null };
+    return { to, rule: wrapped ? t('wrap from the opposite edge') : t('geometric search') };
+  }
+
+  containerRule(from, to, dir, list) {
+    const oldC = nearestContainer(from), newC = nearestContainer(to);
+    const v = oldC?.bag?.get(`#focus_navigation_mode_${DIRS[dir]}`);
+    const mode = v?.k === 'str' ? v.v : '';
+    if (oldC !== newC && mode === 'stop') return { to: null, rule: `${oldC.name} focus_navigation_mode stop` };
+    if (mode === 'contained' && !within(to, oldC)) return { to: null, rule: `${oldC.name} focus_navigation_mode contained` };
+    if (newC && !(oldC && within(oldC, newC)) && flag(newC.props.use_last_focus, false)) {
+      const last = list.find((n) => n.uid === this.lastFocus.get(newC.uid));
+      if (last) return { to: last, rule: `${newC.name} use_last_focus` };
+    }
+    return { to, rule: null };
+  }
+
+  moveFocus(dir) {
+    this.focusActive = true;
+    const list = this.focusList();
+    const from = this.focusNode(list);
+    if (!from) {
+      const to = this.initialFocus(list);
+      this.setFocus(to);
+      if (to) return { node: to, kind: 'focus', moved: true, msg: t('Focus starts on {name} (default_focus_precedence {p}, then reading order)', { name: to.name, p: this.focusPrecedence(to) }) };
+      const msg = list.length
+        ? t('No control takes focus: every candidate has a negative default_focus_precedence and the engine starts the maximum at 0')
+        : t('No control can take focus: none is visible, enabled, focus_enabled and inside the active modal');
+      return { node: this.tree, kind: 'focus', moved: false, msg };
+    }
+    let { to, rule } = this.sweep(from, dir, list);
+    if (to && to !== from) {
+      const c = this.containerRule(from, to, dir, list);
+      to = c.to;
+      rule = c.rule ? `${rule}, ${c.rule}` : rule;
+    }
+    if (!to || to === from) {
+      if (dir === 1 || dir === 2) for (const n of this.inputOrder) if (this.hoverUids.has(n.uid)) this.scrollHovered(n, dir === 2);
+      return { node: from, kind: 'focus', moved: false, msg: t('Focus stays on {name} ({rule})', { name: from.name, rule: rule || t('no candidate') }) };
+    }
+    this.setFocus(to);
+    return { node: to, kind: 'focus', moved: true, msg: t('Focus {from} -> {to} ({rule})', { from: from.name, to: to.name, rule }) };
+  }
+
+  scrollHovered(node, end) {
+    for (let a = node; a; a = a.parent) if (a.props.type === 'scroll_view') return scrollToEdge(a, end);
+    return false;
+  }
+
   hoverAt(nodes, x, y) {
+    if (this.focusActive) {
+      const f = this.focusNode();
+      if (f) [x, y] = center(f.rect);
+    }
     const order = new Map();
     walk(this.tree, (n) => order.set(n, order.size));
-    this.inputOrder = nodes.filter((n) => INPUT_TYPES.has(n.props.type) && n.effVisible && order.has(n))
-      .sort((a, b) => b.layerAbs - a.layerAbs || order.get(b) - order.get(a));
+    const allowed = this.modalFilter();
+    this.inputOrder = nodes.filter((n) => INPUT_TYPES.has(n.props.type) && n.effVisible && order.has(n) && allowed(n))
+      .sort((a, b) => b.layerAbs - a.layerAbs || order.get(a) - order.get(b));
     const next = new Set();
     let taken = false;
     for (const n of this.inputOrder) {
@@ -765,7 +963,8 @@ export class Session {
 
   pointerButton(down, { x, y, now = Date.now(), id = 'button.menu_select' } = {}) {
     const out = [];
-    for (const n of this.inputOrder) {
+    const focus = this.inputOrder.find((n) => n.uid === this.focusUid && n.eff?.enabled !== false);
+    for (const n of focus ? [focus, ...this.inputOrder.filter((o) => o !== focus)] : this.inputOrder) {
       const r = this.inputEvent(n, id, down, { x, y, now });
       if (!r) continue;
       out.push(r);

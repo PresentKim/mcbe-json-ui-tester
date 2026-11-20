@@ -293,7 +293,8 @@ function textureLookup(path) {
 // The game in a Korean UI draws ASCII from the unicode font too (glyph_00), so text in it is
 // narrower than in English.
 let fontMetrics = null, fontMeasure = null;
-const layoutOpts = () => (fontMeasure ? { measure: fontMeasure } : {});
+const textureSize = (path) => { const info = path ? textureLookup(path) : null; return info?.w ? [info.w, info.h] : null; };
+const layoutOpts = () => (fontMeasure ? { measure: fontMeasure, textureSize } : { textureSize });
 function setFont() {
   if (!fontMetrics) return;
   fontMeasure = createMeasure(fontMetrics, { unicodeAscii: $('language').value !== 'en_US' });
@@ -516,6 +517,10 @@ function renderStage() {
     onRendered: (n) => state.session?.anim.rendered(n),
     onHover: (pt) => {
       if (!state.session) return;
+      if (pt) {
+        state.session.focusActive = false;
+        state.session.focusAt(pt.x, pt.y);
+      } else if (state.session.focusActive) return;
       const { changed, notes } = state.session.hoverAt(pt ? stageNodes() : [], pt?.x, pt?.y);
       logInput(notes);
       if (changed || notes.length) relayoutInput();
@@ -541,7 +546,7 @@ function logInput(results) {
     const li = document.createElement('li');
     li.textContent = `${r.node.name}: ${r.msg}`;
     $('pressLog').prepend(li);
-    if (r.kind !== 'event' && r.kind !== 'hover') toast(r.msg);
+    if (r.kind !== 'event' && r.kind !== 'hover' && r.kind !== 'focus') toast(r.msg);
   }
 }
 
@@ -556,7 +561,7 @@ function stageButton(e, down) {
 function stageWheel(e) {
   if (!state.session || !state.tree || !e.deltaY) return;
   const pt = stagePoint($('stage'), e, Number($('zoom').value));
-  const view = scrollViewAt(stageNodes(), pt.x, pt.y);
+  const view = scrollViewAt(stageNodes().filter(state.session.modalFilter()), pt.x, pt.y);
   if (!view) return;
   e.preventDefault();
   if (!wheelScroll(view, -Math.sign(e.deltaY))) return;
@@ -568,6 +573,36 @@ function stageWheel(e) {
 $('stage').addEventListener('mousedown', (e) => stageButton(e, true));
 $('stage').addEventListener('mouseup', (e) => stageButton(e, false));
 $('stage').addEventListener('wheel', stageWheel, { passive: false });
+
+const ARROW_DIRS = { ArrowUp: 1, ArrowDown: 2, ArrowLeft: 3, ArrowRight: 4 };
+
+function focusPoint() {
+  const f = state.session.focusNode();
+  return f ? { x: f.rect.x + f.rect.w / 2, y: f.rect.y + f.rect.h / 2 } : { x: 0, y: 0 };
+}
+
+function stageKey(e, down) {
+  if (!state.session || !state.tree || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const dir = ARROW_DIRS[e.key];
+  if (dir && down) {
+    e.preventDefault();
+    const r = state.session.moveFocus(dir);
+    layoutTree(state.tree, screenSize(), layoutOpts());
+    state.session.hoverAt(stageNodes(), 0, 0);
+    logInput([r]);
+    relayoutInput();
+    if (state.selected) renderDetails();
+  } else if (e.key === 'Enter' && !e.repeat && !e.target.closest?.('button, a')) {
+    e.preventDefault();
+    const pt = focusPoint();
+    if (state.session.focusActive) state.session.hoverAt(stageNodes(), pt.x, pt.y);
+    logInput(state.session.pointerButton(down, { ...pt, now: e.timeStamp, id: 'button.menu_ok' }));
+    relayoutInput();
+  }
+}
+
+document.addEventListener('keydown', (e) => stageKey(e, true));
+document.addEventListener('keyup', (e) => stageKey(e, false));
 
 function findUid(uid) {
   let hit = null;
@@ -630,6 +665,18 @@ function row(tbl, k, v) {
   tbl.append(tr);
 }
 
+function focusRows(tbl, n) {
+  const s = state.session;
+  const modal = s.activeModal();
+  if (!s.modalFilter()(n)) row(tbl, t('Modal'), t('Outside the active modal {name}: no input, hover or focus', { name: modal.name }));
+  else if (n === modal && modal !== state.tree) row(tbl, t('Modal'), t('Active modal (highest layer)'));
+  const list = s.focusList();
+  if (!list.includes(n)) return;
+  const p = s.focusPrecedence(n);
+  if (n.uid === s.focusUid) row(tbl, t('Focus'), s.focusActive ? t('Focused, drawn as hover (default_focus_precedence {p})', { p }) : t('Focused, not drawn until an arrow key (default_focus_precedence {p})', { p }));
+  else row(tbl, t('Focus'), t('Candidate (default_focus_precedence {p})', { p }));
+}
+
 function renderDetails() {
   const box = $('details');
   box.textContent = '';
@@ -643,6 +690,7 @@ function renderDetails() {
   if (n.rect) row(tbl, t('Rect'), `x ${n.rect.x.toFixed(1)} y ${n.rect.y.toFixed(1)} w ${n.rect.w.toFixed(1)} h ${n.rect.h.toFixed(1)} · layer ${n.layerAbs}`);
   row(tbl, t('Visible'), n.effVisible ? t('Yes') : t('No') + (n.assumedHidden ? t(' (unknown global {name} assumed false)', { name: n.assumedHidden }) : ''));
   if (n.stateName) row(tbl, t('State'), n.stateName);
+  if (state.session && n.rect) focusRows(tbl, n);
   if (n.appliedVariables?.length) row(tbl, t('Applied variables'), n.appliedVariables.join(' / '));
   const collection = state.session?.collectionItem(n);
   if (collection) row(tbl, t('Collection item'), `${collection.collection}[${collection.index}]`);
