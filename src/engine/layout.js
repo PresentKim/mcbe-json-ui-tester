@@ -7,7 +7,7 @@ import { layoutText } from './font.js';
 import { isAnimRef } from './anim.js';
 import { bool } from './expr.js';
 
-const FONT_SCALE = { small: 0.8, normal: 1, large: 1.5, extra_large: 2 };
+const FONT_SCALE = { small: 0.5, normal: 1, large: 2, extra_large: 4 };
 
 // Approximate font used until the real metrics (font.js) are loaded: 6 px per ASCII glyph,
 // 9 px per wide glyph, 4 px space, 10 px line.

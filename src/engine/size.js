@@ -34,6 +34,7 @@ export function parseSize(x) {
   let last = 0, neg = false, dangling = false;
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i];
+    if (t.num !== undefined && t.num.trim() === '') continue;
     if (t.num !== undefined) { last = readFloat(t.num); dangling = true; continue; }
     if (t.sep === '-') { neg = true; continue; }
     if (t.sep === '+') { neg = false; continue; }

@@ -10,7 +10,7 @@ const px = (x) => resolveTerms(parseSize(x), { parent: 200, childSum: 0, childMa
 
 test('size strings reuse the last number', () => {
   assert.equal(px('50px%'), 150);
-  assert.equal(px('50px %'), 50);
+  assert.equal(px('50px %'), 150);
   assert.equal(px('10pxpx'), 20);
   assert.equal(px('10px 5'), 10);
   assert.equal(px('10 20px'), 10);
@@ -29,6 +29,11 @@ function lay(defs, globals = {}) {
 }
 
 const box = (size, extra = {}) => ({ type: 'image', size, ...extra });
+
+test('font_size scales by 0.5, 1, 2 and 4 and medium is normal', () => {
+  const n = lay({ r: { type: 'stack_panel', controls: ['small', 'normal', 'large', 'extra_large', 'medium'].map((s) => ({ [s]: { type: 'label', text: 'Ab', localize: false, font_size: s } })) } });
+  assert.deepEqual(['small', 'normal', 'large', 'extra_large', 'medium'].map((s) => n[s].rect.h), [5, 10, 20, 40, 10]);
+});
 
 test('anchor names match exactly', () => {
   const n = lay({ r: { type: 'panel', controls: [
