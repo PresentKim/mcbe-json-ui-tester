@@ -27,7 +27,7 @@ const WINDOWS_CLIENT = {
 
 export const PLATFORMS = {
   desktop: { ...WINDOWS_CLIENT, $desktop_screen: true, $pocket_screen: false, $game_pad: false, $mouse: true, $touch: false },
-  pocket: { ...WINDOWS_CLIENT, $desktop_screen: false, $pocket_screen: true, $game_pad: false, $mouse: false, $touch: true },
+  pocket: { $desktop_screen: false, $pocket_screen: true, $touch: true, $is_pregame: false, $win10_edition: false, $pocket_edition: true, $console_edition: false, $is_console: false, $is_desktop: false, $game_pad: false, $mouse: false },
 };
 
 // Flags the real screen controller answers true on these screens; without them the
