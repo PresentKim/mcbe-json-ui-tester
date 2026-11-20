@@ -18,3 +18,8 @@ test('labels translate a whole key, then lowercase, else keep the text', () => {
 test('% tokens translate one by one and lose the %', () => {
   assert.equal(localize('%gui.ok: %missing.key', lang), 'OK: missing.key');
 });
+
+test('the character that ends a % token stays and opens no new token', () => {
+  assert.equal(localize('%gui.ok%gui.ok', lang), 'OK%gui.ok');
+  assert.equal(localize('100%%', lang), '100%');
+});

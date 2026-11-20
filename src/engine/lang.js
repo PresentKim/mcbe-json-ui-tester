@@ -13,5 +13,17 @@ const lookup = (lang, key) => lang.get(key) ?? lang.get(key.toLowerCase());
 export function localize(text, lang) {
   if (!lang || typeof text !== 'string' || text === '') return text;
   if (!text.includes('%')) return lookup(lang, text) ?? text;
-  return text.replace(/%([A-Za-z0-9._-]+)/g, (_, key) => lookup(lang, key) ?? key);
+  let out = '';
+  for (let i = 0; i < text.length;) {
+    if (text[i] !== '%') { out += text[i++]; continue; }
+    let j = i + 1;
+    while (j < text.length && TOKEN_CHAR.test(text[j])) j++;
+    const key = text.slice(i + 1, j);
+    if (key) out += lookup(lang, key) ?? key;
+    if (j < text.length) out += text[j++];
+    i = j;
+  }
+  return out;
 }
+
+const TOKEN_CHAR = /[A-Za-z0-9._-]/;
