@@ -10,9 +10,24 @@ export const SCREENS = {
   npc: { root: 'npc_interact.npc_screen', label: 'NPC dialogue' },
 };
 
+const WINDOWS_CLIENT = {
+  $is_pregame: false,
+  $win10_edition: true, $pocket_edition: false, $console_edition: false, $is_console: false, $is_desktop: true,
+  $microsoft_os: true, $ms_platform: true,
+  $is_android: false, $is_ios: false, $apple_os: false, $google_os: false, $nx_os: false, $is_ps4: false,
+  $thirdpartyconsole: false, $hide_xbox_live_icon: false,
+  $build_platform_UWP: false, $pre_release: false, $beta_build: false, $creator_build: false, $is_preview_app: false, $is_publish: true,
+  $is_holographic: false, $supports_hand_controllers: false, $gear_vr: false, $oculus_rift: false, $psvr: false,
+  $is_living_room_mode: false, $is_reality_mode: false, $is_mobile_vr: false, $fire_tv: false, $is_settopbox: false,
+  $is_windows_10_mobile: false, $is_win10_arm: false,
+  $device_must_be_removed_for_xbl_signin: false, $built_with_ore_ui_docs_and_tests: false,
+  $supports_add_friend: true, $is_xboxlive_enabled: true, $test_infrastructure_disabled: true, $new_video_settings: true,
+  $is_improve_input_response_platform_supported: true, $is_dynamic_textures_platform_supported: true,
+};
+
 export const PLATFORMS = {
-  desktop: { $desktop_screen: true, $pocket_screen: false, $touch: false, $is_pregame: false, $win10_edition: true, $pocket_edition: false, $console_edition: false, $is_console: false, $is_desktop: true, $gamepad: false, $mouse: true },
-  pocket: { $desktop_screen: false, $pocket_screen: true, $touch: true, $is_pregame: false, $win10_edition: false, $pocket_edition: true, $console_edition: false, $is_console: false, $is_desktop: false, $gamepad: false, $mouse: false },
+  desktop: { ...WINDOWS_CLIENT, $desktop_screen: true, $pocket_screen: false, $game_pad: false, $mouse: true, $touch: false },
+  pocket: { ...WINDOWS_CLIENT, $desktop_screen: false, $pocket_screen: true, $game_pad: false, $mouse: false, $touch: true },
 };
 
 // Flags the real screen controller answers true on these screens; without them the
